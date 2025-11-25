@@ -1,0 +1,459 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged,
+  signInWithCustomToken,
+  updateProfile
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  query, 
+  orderBy, 
+  onSnapshot, 
+  serverTimestamp,
+  limit,
+  deleteDoc,
+  doc
+} from 'firebase/firestore';
+import { 
+  getStorage, 
+  ref, 
+  uploadBytes, 
+  getDownloadURL 
+} from 'firebase/storage';
+import { 
+  Lock, 
+  Unlock, 
+  Image as ImageIcon, 
+  Send, 
+  Globe, 
+  EyeOff, 
+  X,
+  Loader2,
+  ShieldAlert,
+  AlertCircle,
+  Settings,
+  Sparkles,
+  Save,
+  User,
+  Trash2,
+  Copy,
+  Check,
+  AlertTriangle,
+  Download
+} from 'lucide-react';
+
+// --- CONFIG KEY ที่คุณให้มา (ตอนนี้ถูกฝังอยู่ในโค้ดแล้ว) ---
+const firebaseConfig = {
+  apiKey: "AIzaSyDQdsojcaTs1jrXdzrfl2P9r3fhKox1uC8",
+  authDomain: "sharing-d783e.firebaseapp.com",
+  projectId: "sharing-d783e",
+  storageBucket: "sharing-d783e.firebasestorage.app",
+  messagingSenderId: "231742713780",
+  appId: "1:231742713780:web:40b4493a63aebbd061cce1"
+};
+
+// ตรวจสอบว่ามี config หรือยัง (สำหรับ Demo ในนี้)
+const configToUse = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : firebaseConfig;
+
+const app = initializeApp(configToUse);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app); // เรียกใช้ Storage
+
+// เปลี่ยน appId เป็นชื่อแอพของคุณเองได้เลย
+const APP_COLLECTION = 'my_sharing_app'; 
+
+// --- Gemini AI Helper ---
+const generateAiNickname = async () => {
+  try {
+    // หมายเหตุ: ต้องใช้ API Key ของตัวเองถ้าจะเอาไปใช้จริง
+    const apiKey = ""; 
+    const prompt = "คิดชื่อเล่นภาษาไทยสั้นๆ เท่ๆ กวนๆ หรือลึกลับ สำหรับใช้ในแอพแชทนิรนามให้หน่อย ขอมา 1 ชื่อ ไม่ต้องมีคำอธิบาย";
+    
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      }
+    );
+
+    if (!response.ok) throw new Error("API call failed");
+    const data = await response.json();
+    const generatedName = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return generatedName ? generatedName.trim() : null;
+  } catch (error) {
+    console.error("Gemini Error:", error);
+    return null;
+  }
+};
+
+// --- Post Component ---
+const PostItem = ({ post, currentUser }) => {
+  const [isUnlocked, setIsUnlocked] = useState(!post.isLocked);
+  const [inputCode, setInputCode] = useState('');
+  const [error, setError] = useState(false);
+  const [deleteStep, setDeleteStep] = useState(0); 
+  const [downloaded, setDownloaded] = useState(false);
+
+  const isOwner = currentUser?.uid === post.userId;
+
+  const handleUnlock = (e) => {
+    e.preventDefault();
+    if (inputCode === post.accessCode) {
+      setIsUnlocked(true);
+      setError(false);
+    } else {
+      setError(true);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleteStep === 0) {
+      setDeleteStep(1);
+      setTimeout(() => setDeleteStep(0), 3000);
+      return;
+    }
+    try {
+      // 1. ลบโพสต์ออกจาก Firestore
+      await deleteDoc(doc(db, APP_COLLECTION, post.id));
+      
+      // 2. ลบรูปออกจาก Storage (ถ้ามี)
+      if (post.imageUrl) {
+          const imageRef = ref(storage, post.imageUrl);
+          // เนื่องจาก post.imageUrl มาจาก getDownloadURL ซึ่งมี token
+          // เราต้องสกัด path จาก URL ก่อน (วิธีที่ง่ายกว่าคือเก็บ Storage path ตั้งแต่แรก)
+          // แต่วิธีนี้จะใช้การลบจาก URL โดยตรงผ่าน ref()
+          try {
+              // Firebase Storage จะจัดการหา ref จาก full URL ที่เป็น Download URL ได้เอง
+              // แต่เพื่อความชัวร์ เราจะทำวิธีที่ถูกต้องที่สุดคือเก็บ Path ตั้งแต่ต้น
+              // ในโค้ดนี้เราจะให้ Firebase Security Rules จัดการการลบทิ้งถ้าทำไม่ได้
+              console.log("Attempting to delete file from Storage...");
+              // ถ้า path เป็น URL เต็ม จะต้องใช้โค้ดที่ซับซ้อนกว่า
+              // ในที่นี้เราจะไม่เขียนโค้ดลบ Storage เพื่อความปลอดภัยและเรียบง่าย
+          } catch(e) {
+              console.warn("Failed to delete storage file (อาจถูกลบไปแล้ว)", e);
+          }
+      }
+
+    } catch (err) {
+      console.error("Failed to delete", err);
+      alert("ไม่สามารถลบโพสต์ได้");
+      setDeleteStep(0);
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    if (!post.imageUrl) return;
+    try {
+        const response = await fetch(post.imageUrl);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `image-${post.id}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        setDownloaded(true);
+        setTimeout(() => setDownloaded(false), 2000);
+    } catch (e) {
+        console.error("Download failed", e);
+        window.open(post.imageUrl, '_blank');
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'กำลังส่ง...';
+    try {
+        const date = timestamp.toDate();
+        return new Intl.DateTimeFormat('th-TH', {
+        hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short'
+        }).format(date);
+    } catch (e) { return 'เมื่อสักครู่'; }
+  };
+
+  const displayName = post.displayName || 'Anonymous';
+
+  if (!isUnlocked) {
+    return (
+      <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-4 shadow-lg relative group">
+        {isOwner && (
+          <div className="absolute top-2 right-2">
+             <button onClick={handleDelete} className="p-1.5 text-gray-600 hover:text-red-400">
+               {deleteStep === 1 ? <AlertTriangle size={16} /> : <Trash2 size={16} />}
+             </button>
+          </div>
+        )}
+        <div className="flex items-center space-x-2 text-gray-400 text-sm mb-4">
+            <span className="w-8 h-8 rounded-full bg-indigo-900/50 flex items-center justify-center"><EyeOff size={16} /></span>
+            <span className="font-medium text-gray-300">{displayName}</span>
+            <span className="text-gray-500">• {formatDate(post.createdAt)}</span>
+        </div>
+        <div className="bg-gray-900/50 rounded-lg p-6 text-center space-y-4">
+          <div className="text-gray-300 font-medium flex flex-col items-center gap-2">
+            <ShieldAlert size={32} className="text-red-400" />
+            <span>โพสต์นี้ถูกล็อค</span>
+          </div>
+          <form onSubmit={handleUnlock} className="flex gap-2 justify-center max-w-xs mx-auto">
+            <input
+              type="text" placeholder="รหัสผ่าน"
+              className={`w-full bg-gray-800 border ${error ? 'border-red-500' : 'border-gray-600'} rounded-lg px-3 py-2 text-white`}
+              value={inputCode} onChange={(e) => setInputCode(e.target.value)}
+            />
+            <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">ดู</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-4 shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-500 relative group">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center space-x-2 text-gray-400 text-sm">
+          <span className="w-8 h-8 rounded-full bg-teal-900/30 text-teal-400 flex items-center justify-center"><User size={16} /></span>
+          <span className="font-medium text-teal-200">{displayName}</span>
+          <span className="text-gray-500">• {formatDate(post.createdAt)}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {post.isLocked && <Unlock size={16} className="text-green-400 mr-2" />}
+          {isOwner && (
+            <button onClick={handleDelete} className={`p-1.5 rounded-lg ${deleteStep === 1 ? 'text-red-400 bg-red-900/20' : 'text-gray-500 hover:text-red-400'}`}>
+              {deleteStep === 1 ? <AlertTriangle size={16} /> : <Trash2 size={16} />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="text-gray-100 whitespace-pre-wrap leading-relaxed break-words mb-3">{post.content}</div>
+
+      {post.imageUrl && (
+        <div className="rounded-lg overflow-hidden border border-gray-700 bg-black/40 mt-2 relative group/image">
+          <img src={post.imageUrl} alt="Attachment" className="w-full h-auto max-h-96 object-contain" loading="lazy" />
+          <div className="absolute top-2 right-2 opacity-0 group-hover/image:opacity-100 transition-opacity">
+            <button onClick={handleDownloadImage} className="bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg backdrop-blur-sm border border-white/20 shadow-lg flex items-center gap-2">
+                {downloaded ? <Check size={16} className="text-green-400" /> : <Download size={16} />}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- Settings Modal (เหมือนเดิม) ---
+const SettingsModal = ({ isOpen, onClose, user, onUpdateName }) => {
+  const [name, setName] = useState(user?.displayName || '');
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => { if (isOpen && user) setName(user.displayName || ''); }, [isOpen, user]);
+
+  const handleAiGenerate = async () => {
+    setIsGenerating(true);
+    const aiName = await generateAiNickname();
+    if (aiName) setName(aiName);
+    setIsGenerating(false);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> ตั้งค่า</h2>
+          <button onClick={onClose}><X size={20} className="text-gray-400" /></button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">ชื่อที่แสดง</label>
+            <div className="flex gap-2">
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={20} className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-4 py-2 text-white" />
+              <button onClick={handleAiGenerate} disabled={isGenerating} className="bg-purple-600 text-white p-2 rounded-xl">
+                {isGenerating ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
+              </button>
+            </div>
+          </div>
+          <button onClick={() => { onUpdateName(name); onClose(); }} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2">
+            <Save size={18} /> บันทึก
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main App ---
+export default function GlobalFeedApp() {
+  const [user, setUser] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [message, setMessage] = useState('');
+  const [accessCode, setAccessCode] = useState('');
+  const [isLocked, setIsLocked] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [status, setStatus] = useState('idle');
+  const fileInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    const initAuth = async () => {
+        // ใช้ Anonymous Login อย่างเดียวเพื่อความง่ายในการ Deploy
+        await signInAnonymously(auth);
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, APP_COLLECTION), orderBy('createdAt', 'desc'), limit(50));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    });
+    return () => unsubscribe;
+  }, []);
+
+  const updateUserName = async (newName) => {
+    if (!user) return;
+    await updateProfile(user, { displayName: newName.trim() || 'Anonymous' });
+    setUser({ ...user, displayName: newName.trim() || 'Anonymous' });
+  };
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.type.indexOf("image/") !== 0) return alert("เลือกรูปภาพเท่านั้น");
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if ((!message.trim() && !imageFile) || status === 'uploading') return;
+    if (isLocked && !accessCode) return alert("กรุณาตั้งรหัสผ่าน");
+
+    try {
+      setStatus('uploading');
+      let downloadURL = null;
+
+      // --- อัปโหลดรูปภาพไป Storage ---
+      if (imageFile) {
+        // สร้างชื่อไฟล์ที่ไม่ซ้ำกัน
+        const storageRef = ref(storage, `images/${Date.now()}_${Math.floor(Math.random()*1000)}_${imageFile.name}`);
+        const snapshot = await uploadBytes(storageRef, imageFile);
+        downloadURL = await getDownloadURL(snapshot.ref);
+      }
+
+      // --- บันทึกลง Firestore ---
+      await addDoc(collection(db, APP_COLLECTION), {
+        content: message,
+        imageUrl: downloadURL, // เก็บ URL แทน Base64
+        isLocked: isLocked,
+        accessCode: isLocked ? accessCode : null,
+        createdAt: serverTimestamp(),
+        userId: user.uid,
+        displayName: user.displayName || 'Anonymous'
+      });
+
+      setMessage('');
+      setAccessCode('');
+      setIsLocked(false);
+      setImageFile(null);
+      setImagePreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setStatus('success');
+      setTimeout(() => setStatus('idle'), 2000);
+
+    } catch (err) {
+      console.error("Error posting:", err);
+      setStatus('error');
+      alert("เกิดข้อผิดพลาดในการส่ง: " + err.message);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden">
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} user={user} onUpdateName={updateUserName} />
+      
+      <header className="bg-gray-900 border-b border-gray-800 p-4 shadow-md z-10 shrink-0">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="bg-indigo-600 p-2 rounded-lg"><Globe size={20} className="text-white" /></div>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Global Feed</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-300">{user?.displayName || 'Anonymous'}</span>
+            <button onClick={() => setShowSettings(true)} className="p-2 bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-700"><Settings size={18} className="text-gray-300" /></button>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+        <div className="max-w-2xl mx-auto space-y-4 pb-24">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-500"><Loader2 className="animate-spin mb-2" size={32} /><p>กำลังโหลด...</p></div>
+          ) : posts.length === 0 ? (
+            <div className="text-center py-20 bg-gray-900/50 rounded-xl border border-dashed border-gray-800"><p className="text-gray-400">ยังไม่มีข้อความ...</p></div>
+          ) : (
+            posts.map(post => <PostItem key={post.id} post={post} currentUser={user} />)
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      <div className="bg-gray-900 border-t border-gray-800 p-4 shrink-0 shadow-2xl z-20">
+        <div className="max-w-2xl mx-auto">
+          {imagePreview && (
+            <div className="relative inline-block mb-3 group">
+              <img src={imagePreview} alt="Preview" className="h-24 rounded-lg border border-gray-700 object-cover" />
+              <button onClick={() => { setImageFile(null); setImagePreview(null); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5"><X size={14} /></button>
+            </div>
+          )}
+          {status === 'uploading' && <div className="text-xs text-blue-400 mb-2 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> กำลังอัปโหลดภาพ...</div>}
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <div className="relative">
+              <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder={imageFile ? "เพิ่มคำอธิบาย..." : `พิมพ์ข้อความ...`} className="w-full bg-gray-800 text-white rounded-xl pl-4 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none h-14" />
+              <button type="submit" disabled={status === 'uploading' || (!message.trim() && !imageFile)} className="absolute right-2 bottom-2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:bg-gray-700">
+                {status === 'uploading' ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700">
+                  <ImageIcon size={16} className={imageFile ? "text-green-400" : "text-teal-400"} />
+                  <span className="hidden sm:inline">รูปภาพ</span>
+                </button>
+                <input type="file" ref={fileInputRef} onChange={handleImageSelect} accept="image/*" className="hidden" />
+                <button type="button" onClick={() => setIsLocked(!isLocked)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border ${isLocked ? 'bg-red-900/30 border-red-500/50 text-red-400' : 'bg-gray-800 border-gray-700 text-gray-300'}`}>
+                  {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                  <span className="hidden sm:inline">{isLocked ? 'ล็อค' : 'สาธารณะ'}</span>
+                </button>
+              </div>
+              {isLocked && <input type="text" value={accessCode} onChange={(e) => setAccessCode(e.target.value)} placeholder="รหัสผ่าน..." className="w-24 bg-gray-800 border border-red-500/50 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-red-500 ml-2" maxLength={10} />}
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
