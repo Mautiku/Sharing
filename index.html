@@ -88,7 +88,7 @@
                         if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE/w; w = MAX_SIZE; } }
                         else { if (h > MAX_SIZE) { w *= MAX_SIZE/h; h = MAX_SIZE; } }
                         canvas.width = w; canvas.height = h;
-                        canvas.getContext('2d').drawImage(img, 0, 0, w, w,); // Fix: use w, h for drawImage instead of w, w
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
                         resolve(canvas.toDataURL('image/jpeg', 0.7));
                     };
                 };
@@ -417,6 +417,17 @@
                                 
                                 {isAttemptingDecrypt ? (
                                     <div className="flex flex-col gap-2">
+                                        
+                                        {/* START: CREATOR INFO ADDITION */}
+                                        {isMe && (
+                                            <p className="text-xs text-yellow-300/80 bg-slate-700/50 p-2 rounded-lg border border-yellow-700/50">
+                                                <Key size={12} className="inline mr-1 text-yellow-400"/>
+                                                ในฐานะผู้สร้างข้อความ, คุณต้องป้อนรหัสที่คุณตั้งไว้เพื่อเปิดอ่านเท่านั้น 
+                                                <span className="font-bold text-red-400"> (รหัสจะไม่ถูกเก็บไว้ในระบบ)</span>
+                                            </p>
+                                        )}
+                                        {/* END: CREATOR INFO ADDITION */}
+
                                         <input
                                             type="password"
                                             placeholder="กรอกรหัสเพื่อเปิดอ่าน"
@@ -446,7 +457,7 @@
                                         onClick={() => setIsAttemptingDecrypt(true)}
                                         className="mt-1 flex items-center gap-1 bg-red-600 hover:bg-red-500 text-white font-medium py-1.5 px-3 rounded-lg text-sm transition"
                                     >
-                                        <Key size={14}/> เปิดอ่าน
+                                        <Key size={14}/> {isMe ? 'เปิดข้อความของฉัน' : 'เปิดอ่าน'} {/* <--- MODIFIED BUTTON TEXT */}
                                     </button>
                                 )}
                             </>
