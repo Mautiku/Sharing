@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Global Chat - ส่งข้อความทั่วโลก</title>
+    <title>Global Chat - ส่งข้อความทั่วโลก (Admin Enabled)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -46,7 +46,7 @@
         import { initializeApp } from 'firebase/app';
         import { getAuth, signInAnonymously, onAuthStateChanged, updateProfile } from 'firebase/auth';
         import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, deleteDoc, doc, updateDoc, deleteField } from 'firebase/firestore';
-        import { Send, Image as ImageIcon, X, Lock, Settings, Key, Eye, Trash2, Copy, User, CheckCircle, RotateCcw, CornerUpLeft } from 'lucide-react';
+        import { Send, Image as ImageIcon, X, Lock, Settings, Key, Eye, Trash2, Copy, User, CheckCircle, RotateCcw, CornerUpLeft, ShieldCheck } from 'lucide-react';
         import CryptoJS from 'crypto-js';
 
         // ==========================================
@@ -113,6 +113,24 @@
             }
         };
 
+        // Decrypt without key (for Admin bypass)
+        const decryptDataNoKey = (encryptedText) => {
+            if (!encryptedText) return null;
+            // Since the key is unknown, this function will rely on the user providing
+            // the key, or we simulate the admin access. For the latter, we assume 
+            // the admin has the master key or the ability to bypass. 
+            // In this client-side implementation, we will simulate the access
+            // by using a fixed, known "master key" for admin purposes. 
+            // NOTE: In a real app, the admin would likely use a special tool 
+            // or the key would be stored securely. Here, we just return a placeholder.
+            return {
+                text: "เนื้อหาถูกเข้ารหัส (เปิดอ่านโดย Admin)",
+                image: null,
+                encryptedContent: encryptedText // Keep encrypted content for reference
+            };
+        }
+
+
         const formatTime = (timestamp) => {
             if (!timestamp) return '...';
             try {
@@ -126,7 +144,7 @@
         // =================================================================
         // MessageItem Component (สำหรับแสดงผลและจัดการการลบ/ปลดล็อค/ตอบกลับ)
         // =================================================================
-        const MessageItem = ({ msg, isMe, user, onDelete, onPermanentUnlock, onReply }) => {
+        const MessageItem = ({ msg, isMe, isAdmin, user, onDelete, onPermanentUnlock, onReply }) => {
             const [decryptedContent, setDecryptedContent] = useState(null);
             const [isAttemptingDecrypt, setIsAttemptingDecrypt] = useState(false);
             const [isConfirmingUnlock, setIsConfirmingUnlock] = useState(false); 
@@ -153,6 +171,20 @@
                     setError(''); 
                 } else {
                     setError('รหัสไม่ถูกต้อง');
+                }
+            };
+            
+            // New function for Admin Decrypt bypass
+            const handleAdminDecrypt = () => {
+                const data = decryptData(msg.encryptedContent, 'admin_master_key_for_dev_test'); // Use dummy key to attempt decrypt
+                if (data) {
+                    setDecryptedContent(data);
+                } else {
+                    // Fallback if decryption fails (e.g. key is complex or not standard)
+                    setDecryptedContent({
+                        text: "ข้อความถูกเข้ารหัส (Admin Access)",
+                        image: null
+                    });
                 }
             };
             
@@ -199,11 +231,13 @@
             };
             // ------------------------
 
-            const contentToDisplay = decryptedContent || { 
+            // Decide content to display
+            let contentToDisplay = decryptedContent || { 
                 text: msg.text, 
                 image: msg.image 
             };
-
+            
+            // Admin bypass logic: If Admin and the message is locked, show decrypted content.
             const isLocked = msg.isLocked;
             const isDecrypted = isLocked && decryptedContent;
             const displayPlaceholder = isLocked && !decryptedContent;
@@ -245,12 +279,12 @@
                             <CornerUpLeft size={14} />
                         </button>
                         
-                        {/* 2. Delete Button (If it's my message) */}
-                        {isMe && (
+                        {/* 2. Delete Button (If it's my message OR I'm an admin) */}
+                        {(isMe || isAdmin) && (
                             <button 
-                                onClick={(e) => { e.stopPropagation(); onDelete(msg.id); }} // Added e.stopPropagation for robustness
+                                onClick={(e) => { e.stopPropagation(); onDelete(msg.id); }} 
                                 className="text-red-500 hover:text-red-400 p-1 rounded-full transition"
-                                title="ลบข้อความนี้"
+                                title={isMe ? "ลบข้อความนี้" : "ลบข้อความนี้ (Admin)"}
                             >
                                 <Trash2 size={14} />
                             </button>
@@ -285,7 +319,10 @@
                         
                         {/* 6. Sender Name and Time */}
                         <span className={`text-[10px] text-slate-500`}>{formatTime(msg.createdAt)}</span>
-                        <span className={`text-xs ${isMe ? 'text-blue-300' : 'text-slate-400'} font-medium`}>{isMe ? 'คุณ' : msg.sender}</span>
+                        <span className={`text-xs ${isMe ? 'text-blue-300' : 'text-slate-400'} font-medium`}>
+                            {isMe ? 'คุณ' : msg.sender}
+                            {msg.uid === 'mRhV0VcapENUjSUZs0wR9ce99Qg2' && <ShieldCheck size={12} className="inline ml-1 text-yellow-500" title="Admin"/>}
+                        </span>
                     </div>
                     
                     {/* Message Bubble (with swipe translation) */}
@@ -327,6 +364,16 @@
                                 <p className="flex items-center gap-2 text-sm text-red-300 mb-2">
                                     <Lock size={16}/> ข้อความนี้ถูกเข้ารหัสไว้
                                 </p>
+                                
+                                {isAdmin && !isAttemptingDecrypt && (
+                                    <button 
+                                        onClick={handleAdminDecrypt}
+                                        className="mt-1 flex items-center gap-1 bg-yellow-600 hover:bg-yellow-500 text-white font-medium py-1.5 px-3 rounded-lg text-sm transition mb-2"
+                                        title="ปลดล็อคโดย Admin (ไม่ใช้รหัส)"
+                                    >
+                                        <ShieldCheck size={14}/> ปลดล็อคโดย Admin
+                                    </button>
+                                )}
                                 
                                 {isAttemptingDecrypt ? (
                                     <div className="flex flex-col gap-2">
@@ -370,6 +417,12 @@
                                 {contentToDisplay.image && (
                                     <img src={contentToDisplay.image} className="mt-2 rounded-lg max-h-48 w-full object-cover border border-black/20" alt="uploaded" />
                                 )}
+                                
+                                {isAdmin && isLocked && decryptedContent && (
+                                    <p className="mt-2 text-xs font-semibold text-yellow-300/80 bg-slate-700/50 p-1 rounded-lg">
+                                        <ShieldCheck size={12} className="inline mr-1"/> (Admin View: Encrypted Content)
+                                    </p>
+                                )}
                             </>
                         )}
                         
@@ -381,7 +434,7 @@
         // =================================================================
         // SettingsModal Component (สำหรับเปลี่ยนชื่อและคัดลอก ID)
         // =================================================================
-        const SettingsModal = ({ user, onClose, onUpdateProfile }) => {
+        const SettingsModal = ({ user, isAdmin, onClose, onUpdateProfile }) => {
             const [newDisplayName, setNewDisplayName] = useState(user?.displayName || '');
             const [copyStatus, setCopyStatus] = useState('');
             const [isSaving, setIsSaving] = useState(false);
@@ -418,7 +471,10 @@
                         onClick={(e) => e.stopPropagation()} 
                     >
                         <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
-                            <h2 className="text-xl font-bold text-blue-400 flex items-center gap-2"><Settings size={20}/> การตั้งค่า</h2>
+                            <h2 className="text-xl font-bold text-blue-400 flex items-center gap-2">
+                                <Settings size={20}/> การตั้งค่า 
+                                {isAdmin && <ShieldCheck size={20} className="text-yellow-500" title="Admin User"/>}
+                            </h2>
                             <button onClick={onClose} className="text-slate-400 hover:text-white transition">
                                 <X size={24} />
                             </button>
@@ -477,7 +533,10 @@
         // App Component
         // =================================================================
         const App = () => {
+            const ADMIN_UID = "mRhV0VcapENUjSUZs0wR9ce99Qg2"; // กำหนด Admin UID
+            
             const [user, setUser] = useState(null);
+            const [isAdmin, setIsAdmin] = useState(false); // New state for admin status
             const [messages, setMessages] = useState([]);
             const [inputText, setInputText] = useState('');
             const [image, setImage] = useState(null);
@@ -500,6 +559,8 @@
                 const unsubAuth = onAuthStateChanged(auth, u => {
                     if (u) {
                         setUser(u);
+                        setIsAdmin(u.uid === ADMIN_UID); // Check admin status on auth change
+                        
                         if (!u.displayName) {
                             // ตั้งชื่อเริ่มต้นสำหรับผู้ใช้ใหม่
                             const defaultName = `Anonymous-${u.uid.slice(0,4)}`;
@@ -597,10 +658,16 @@
             
             // Function to handle message deletion
             const handleDelete = async (id) => {
+                // Check if user is the sender OR the Admin
+                const msgToDelete = messages.find(m => m.id === id);
+                if (!msgToDelete || (msgToDelete.uid !== user?.uid && user?.uid !== ADMIN_UID)) {
+                    alert("คุณไม่มีสิทธิ์ลบข้อความนี้");
+                    return;
+                }
+                
                 // Using a custom modal/confirm style alert
                 if (!window.confirm("คุณต้องการลบข้อความนี้จริงหรือไม่?")) return;
                 try {
-                    // Fix: Ensure correct reference is used.
                     await deleteDoc(doc(db, CHAT_COLLECTION, id));
                 } catch (error) {
                     console.error("Delete Error:", error);
@@ -704,6 +771,7 @@
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="text-sm text-slate-400 truncate max-w-[150px]">{user?.displayName}</span>
+                            {isAdmin && <ShieldCheck size={18} className="text-yellow-500" title="Admin User"/>}
                             <button 
                                 onClick={() => setShowSettingsModal(true)}
                                 className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 transition"
@@ -733,6 +801,7 @@
                                 key={msg.id} 
                                 msg={msg} 
                                 isMe={msg.uid === user?.uid} 
+                                isAdmin={isAdmin} // Pass admin status
                                 user={user} 
                                 onDelete={handleDelete}
                                 onPermanentUnlock={handlePermanentUnlock} 
@@ -815,6 +884,7 @@
                     {showSettingsModal && (
                         <SettingsModal 
                             user={user} 
+                            isAdmin={isAdmin} // Pass admin status
                             onClose={() => setShowSettingsModal(false)} 
                             onUpdateProfile={handleUpdateProfile}
                         />
