@@ -46,7 +46,7 @@
         import { initializeApp } from 'firebase/app';
         import { getAuth, signInAnonymously, onAuthStateChanged, updateProfile } from 'firebase/auth';
         import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, deleteDoc, doc, updateDoc, deleteField } from 'firebase/firestore';
-        import { Send, Image as ImageIcon, X, Lock, Settings, Key, Eye, Trash2, Copy, User, CheckCircle, RotateCcw, CornerUpLeft, ShieldCheck } from 'lucide-react';
+        import { Send, Image as ImageIcon, X, Lock, Settings, Key, Eye, Trash2, Copy, User, CheckCircle, RotateCcw, CornerUpLeft, ShieldCheck, Crown } from 'lucide-react';
         import CryptoJS from 'crypto-js';
 
         // ==========================================
@@ -119,8 +119,6 @@
             // Since the key is unknown, this function will rely on the user providing
             // the key, or we simulate the admin access. For the latter, we assume 
             // the admin has the master key or the ability to bypass. 
-            // In this client-side implementation, we will simulate the access
-            // by using a fixed, known "master key" for admin purposes. 
             // NOTE: In a real app, the admin would likely use a special tool 
             // or the key would be stored securely. Here, we just return a placeholder.
             return {
@@ -176,13 +174,14 @@
             
             // New function for Admin Decrypt bypass
             const handleAdminDecrypt = () => {
-                const data = decryptData(msg.encryptedContent, 'admin_master_key_for_dev_test'); // Use dummy key to attempt decrypt
+                // Simulate admin master access (by checking against a dummy key)
+                const data = decryptData(msg.encryptedContent, 'admin_master_key_for_dev_test'); 
                 if (data) {
                     setDecryptedContent(data);
                 } else {
                     // Fallback if decryption fails (e.g. key is complex or not standard)
                     setDecryptedContent({
-                        text: "ข้อความถูกเข้ารหัส (Admin Access)",
+                        text: "ข้อความถูกเข้ารหัส (เปิดอ่านโดย Admin)",
                         image: null
                     });
                 }
@@ -244,6 +243,15 @@
             const showPermanentUnlock = isMe && isDecrypted;
             
             const replyQuoteClasses = isMe ? 'self-end bg-blue-700/50' : 'self-start bg-slate-700/50';
+
+            // Check if the message sender is the Admin
+            const isSenderAdmin = msg.uid === 'mRhV0VcapENUjSUZs0wR9ce99Qg2';
+            
+            // Define classes for sender name
+            const senderNameClasses = isSenderAdmin 
+                ? 'text-yellow-400 font-extrabold flex items-center gap-1' // Yellow for Admin
+                : (isMe ? 'text-blue-300 font-medium' : 'text-slate-400 font-medium');
+
 
             return (
                 <div 
@@ -319,9 +327,10 @@
                         
                         {/* 6. Sender Name and Time */}
                         <span className={`text-[10px] text-slate-500`}>{formatTime(msg.createdAt)}</span>
-                        <span className={`text-xs ${isMe ? 'text-blue-300' : 'text-slate-400'} font-medium`}>
-                            {isMe ? 'คุณ' : msg.sender}
-                            {msg.uid === 'mRhV0VcapENUjSUZs0wR9ce99Qg2' && <ShieldCheck size={12} className="inline ml-1 text-yellow-500" title="Admin"/>}
+                        
+                        <span className={`text-xs ${senderNameClasses}`}>
+                            {isSenderAdmin && <Crown size={14} className="text-yellow-500" title="ผู้ดูแลระบบ"/>}
+                            {isMe && !isSenderAdmin ? 'คุณ' : msg.sender}
                         </span>
                     </div>
                     
@@ -331,7 +340,7 @@
                         className={`max-w-[85%] rounded-2xl p-3 ${
                         isMe 
                         ? 'bg-blue-600 text-white rounded-br-sm shadow-blue-900/20' 
-                        : 'bg-slate-800 text-slate-200 rounded-bl-sm border border-slate-700'
+                        : (isSenderAdmin ? 'bg-yellow-800/80 text-white rounded-bl-sm border border-yellow-700 shadow-yellow-900/20' : 'bg-slate-800 text-slate-200 rounded-bl-sm border border-slate-700')
                     } shadow-lg`}>
                         
                         {/* 1. Confirmation Modal for Permanent Unlock */}
@@ -473,7 +482,7 @@
                         <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
                             <h2 className="text-xl font-bold text-blue-400 flex items-center gap-2">
                                 <Settings size={20}/> การตั้งค่า 
-                                {isAdmin && <ShieldCheck size={20} className="text-yellow-500" title="Admin User"/>}
+                                {isAdmin && <Crown size={20} className="text-yellow-500" title="Admin User"/>}
                             </h2>
                             <button onClick={onClose} className="text-slate-400 hover:text-white transition">
                                 <X size={24} />
@@ -770,8 +779,10 @@
                             <h1 className="font-bold text-lg bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Global Chat</h1>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="text-sm text-slate-400 truncate max-w-[150px]">{user?.displayName}</span>
-                            {isAdmin && <ShieldCheck size={18} className="text-yellow-500" title="Admin User"/>}
+                            <span className={`text-sm truncate max-w-[150px] ${isAdmin ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
+                                {user?.displayName}
+                            </span>
+                            {isAdmin && <Crown size={18} className="text-yellow-500" title="ผู้ดูแลระบบ"/>}
                             <button 
                                 onClick={() => setShowSettingsModal(true)}
                                 className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 transition"
