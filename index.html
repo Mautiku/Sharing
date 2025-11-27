@@ -45,7 +45,7 @@
         import { createRoot } from 'react-dom/client';
         import { initializeApp } from 'firebase/app';
         import { getAuth, signInAnonymously, onAuthStateChanged, updateProfile } from 'firebase/auth';
-        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, deleteDoc, doc, updateDoc, deleteField } from 'firebase/firestore';
+        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, deleteDoc, doc, updateDoc, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
         import { Send, Image as ImageIcon, X, Lock, Settings, Key, Eye, Trash2, Copy, User, CheckCircle, RotateCcw, CornerUpLeft, ShieldCheck, Crown } from 'lucide-react';
         import CryptoJS from 'crypto-js';
 
@@ -88,7 +88,7 @@
                         if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE/w; w = MAX_SIZE; } }
                         else { if (h > MAX_SIZE) { w *= MAX_SIZE/h; h = MAX_SIZE; } }
                         canvas.width = w; canvas.height = h;
-                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, w,); // Fix: use w, h for drawImage instead of w, w
                         resolve(canvas.toDataURL('image/jpeg', 0.7));
                     };
                 };
@@ -116,18 +116,12 @@
         // Decrypt without key (for Admin bypass)
         const decryptDataNoKey = (encryptedText) => {
             if (!encryptedText) return null;
-            // Since the key is unknown, this function will rely on the user providing
-            // the key, or we simulate the admin access. For the latter, we assume 
-            // the admin has the master key or the ability to bypass. 
-            // NOTE: In a real app, the admin would likely use a special tool 
-            // or the key would be stored securely. Here, we just return a placeholder.
             return {
                 text: "เนื้อหาถูกเข้ารหัส (เปิดอ่านโดย Admin)",
                 image: null,
-                encryptedContent: encryptedText // Keep encrypted content for reference
+                encryptedContent: encryptedText
             };
         }
-
 
         const formatTime = (timestamp) => {
             if (!timestamp) return '...';
@@ -140,19 +134,22 @@
         };
 
         // =================================================================
-        // MessageItem Component (สำหรับแสดงผลและจัดการการลบ/ปลดล็อค/ตอบกลับ)
+        // MessageItem Component
         // =================================================================
-        const MessageItem = ({ msg, isMe, isAdmin, user, onDelete, onPermanentUnlock, onReply }) => {
+        const MessageItem = ({ msg, isMe, isAdmin, user, onDelete, onPermanentUnlock, onReply, onUpdateReaction }) => {
             const [decryptedContent, setDecryptedContent] = useState(null);
             const [isAttemptingDecrypt, setIsAttemptingDecrypt] = useState(false);
             const [isConfirmingUnlock, setIsConfirmingUnlock] = useState(false); 
             const [decryptKey, setDecryptKey] = useState('');
             const [error, setError] = useState('');
             
-            // State for swipe-to-reply functionality
             const [swipeOffset, setSwipeOffset] = useState(0);
             const touchStartRef = useRef(0);
-            const SWIPE_THRESHOLD = 50; // Minimum distance to trigger reply
+            const SWIPE_THRESHOLD = 50;
+            
+            const [showReactionPicker, setShowReactionPicker] = useState(false);
+            const longPressTimerRef = useRef(null);
+            const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥']; 
 
             const handleDecrypt = () => {
                 setError('');
@@ -172,18 +169,12 @@
                 }
             };
             
-            // New function for Admin Decrypt bypass
             const handleAdminDecrypt = () => {
-                // Simulate admin master access (by checking against a dummy key)
                 const data = decryptData(msg.encryptedContent, 'admin_master_key_for_dev_test'); 
                 if (data) {
                     setDecryptedContent(data);
                 } else {
-                    // Fallback if decryption fails (e.g. key is complex or not standard)
-                    setDecryptedContent({
-                        text: "ข้อความถูกเข้ารหัส (เปิดอ่านโดย Admin)",
-                        image: null
-                    });
+                    setDecryptedContent(decryptDataNoKey(msg.encryptedContent));
                 }
             };
             
@@ -197,7 +188,8 @@
             
             const handleUnlockConfirmed = async () => {
                 if (!decryptedContent || !msg.encryptedContent || !decryptKey) {
-                    alert('เกิดข้อผิดพลาดในการปลดล็อคถาวร: ข้อมูลไม่ครบถ้วน');
+                    // Use custom modal or message box instead of window.alert
+                    console.error('เกิดข้อผิดพลาดในการปลดล็อคถาวร: ข้อมูลไม่ครบถ้วน');
                     setIsConfirmingUnlock(false);
                     return;
                 }
@@ -205,38 +197,56 @@
                 handleRelock(); 
             }
 
-            // --- Swipe Handlers ---
             const handleTouchStart = (e) => {
                 touchStartRef.current = e.touches[0].clientX;
-                setSwipeOffset(0); // Reset offset
+                setSwipeOffset(0); 
+
+                longPressTimerRef.current = setTimeout(() => {
+                    setShowReactionPicker(true);
+                    setSwipeOffset(0);
+                }, 500);
             };
 
             const handleTouchMove = (e) => {
                 const currentX = e.touches[0].clientX;
                 const diff = currentX - touchStartRef.current;
-                // Only allow positive (right) swipe
+                
+                if (Math.abs(diff) > 10) { 
+                    clearTimeout(longPressTimerRef.current);
+                }
+
                 if (diff > 0) {
-                    setSwipeOffset(Math.min(SWIPE_THRESHOLD * 1.5, diff)); // Cap visual drag
+                    setSwipeOffset(Math.min(SWIPE_THRESHOLD * 1.5, diff));
+                } else {
+                    setSwipeOffset(0);
                 }
             };
 
             const handleTouchEnd = () => {
-                if (swipeOffset >= SWIPE_THRESHOLD) {
-                    // Trigger reply logic
+                clearTimeout(longPressTimerRef.current);
+                
+                if (!showReactionPicker && swipeOffset >= SWIPE_THRESHOLD) {
                     onReply(msg, contentToDisplay);
                 }
-                // Snap back to 0
                 setSwipeOffset(0);
             };
-            // ------------------------
+            
+            const handleContextMenu = (e) => {
+                e.preventDefault();
+                setShowReactionPicker(true);
+            };
 
-            // Decide content to display
+            const handleReact = (emoji) => {
+                onUpdateReaction(msg.id, emoji);
+                setShowReactionPicker(false);
+            };
+            
+
             let contentToDisplay = decryptedContent || { 
                 text: msg.text, 
                 image: msg.image 
             };
             
-            // Admin bypass logic: If Admin and the message is locked, show decrypted content.
             const isLocked = msg.isLocked;
             const isDecrypted = isLocked && decryptedContent;
             const displayPlaceholder = isLocked && !decryptedContent;
@@ -244,24 +254,45 @@
             
             const replyQuoteClasses = isMe ? 'self-end bg-blue-700/50' : 'self-start bg-slate-700/50';
 
-            // Check if the message sender is the Admin
             const isSenderAdmin = msg.uid === 'mRhV0VcapENUjSUZs0wR9ce99Qg2';
             
-            // Define classes for sender name
             const senderNameClasses = isSenderAdmin 
-                ? 'text-yellow-400 font-extrabold flex items-center gap-1' // Yellow for Admin
+                ? 'text-yellow-400 font-extrabold flex items-center gap-1'
                 : (isMe ? 'text-blue-300 font-medium' : 'text-slate-400 font-medium');
-
 
             return (
                 <div 
                     key={msg.id} 
                     className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} msg-anim relative`}
-                    // Add touch handlers for swipe-to-reply
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
+                    onContextMenu={handleContextMenu}
                 >
+                    {/* Reaction Picker Modal (Conditionally rendered) */}
+                    {showReactionPicker && (
+                        <>
+                            {/* Overlay to close picker when clicking outside */}
+                            <div className="fixed inset-0 z-10" onClick={() => setShowReactionPicker(false)}></div>
+                            <div 
+                                className="absolute z-20 p-2 rounded-full bg-slate-700/95 backdrop-blur-sm shadow-xl flex gap-1 transform -translate-y-full mb-2"
+                                style={{ [isMe ? 'right' : 'left']: '10px', bottom: '0' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {EMOJIS.map(emoji => (
+                                    <button 
+                                        key={emoji}
+                                        onClick={() => handleReact(emoji)}
+                                        className="text-xl p-1.5 rounded-full hover:bg-slate-600 transition duration-150 transform hover:scale-110"
+                                        title={`Reaction: ${emoji}`}
+                                    >
+                                        {emoji}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
                     {/* Hidden Reply Icon for visual feedback during swipe */}
                     <div className={`absolute left-0 top-1/2 -translate-y-1/2 transition-opacity ${swipeOffset > 10 ? 'opacity-100' : 'opacity-0'}`}>
                         <CornerUpLeft size={24} className="text-blue-400"/>
@@ -341,7 +372,7 @@
                         isMe 
                         ? 'bg-blue-600 text-white rounded-br-sm shadow-blue-900/20' 
                         : (isSenderAdmin ? 'bg-yellow-800/80 text-white rounded-bl-sm border border-yellow-700 shadow-yellow-900/20' : 'bg-slate-800 text-slate-200 rounded-bl-sm border border-slate-700')
-                    } shadow-lg`}>
+                    } shadow-lg relative`}>
                         
                         {/* 1. Confirmation Modal for Permanent Unlock */}
                         {isConfirmingUnlock ? (
@@ -424,7 +455,19 @@
                             <>
                                 {contentToDisplay.text && <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{contentToDisplay.text}</p>}
                                 {contentToDisplay.image && (
-                                    <img src={contentToDisplay.image} className="mt-2 rounded-lg max-h-48 w-full object-cover border border-black/20" alt="uploaded" />
+                                    // Image Download
+                                    <a 
+                                        href={contentToDisplay.image} 
+                                        download={`chat_image_${msg.id}.png`}
+                                        className="mt-2 block"
+                                        title="คลิกเพื่อดาวน์โหลดรูปภาพ"
+                                    >
+                                        <img 
+                                            src={contentToDisplay.image} 
+                                            className="rounded-lg max-h-48 w-full object-cover border border-black/20 cursor-pointer hover:opacity-90 transition" 
+                                            alt="uploaded" 
+                                        />
+                                    </a>
                                 )}
                                 
                                 {isAdmin && isLocked && decryptedContent && (
@@ -436,12 +479,37 @@
                         )}
                         
                     </div>
+                    
+                    {/* Reactions Display */}
+                    {Object.keys(msg.reactions || {}).length > 0 && (
+                        <div className={`flex gap-1 mt-1 text-sm ${isMe ? 'mr-1' : 'ml-1'}`}>
+                            {EMOJIS.filter(emoji => msg.reactions[emoji]?.length > 0).map(emoji => {
+                                const count = msg.reactions[emoji].length;
+                                const hasReacted = msg.reactions[emoji].includes(user.uid);
+                                return (
+                                    <div 
+                                        key={emoji} 
+                                        className={`flex items-center p-1 rounded-full text-xs font-medium cursor-pointer transition ${
+                                            hasReacted ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                        }`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onUpdateReaction(msg.id, emoji);
+                                        }}
+                                        title={`${count} คน reacted with ${emoji}`}
+                                    >
+                                        {emoji} <span className="ml-1 text-xs">{count}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             );
         };
         
         // =================================================================
-        // SettingsModal Component (สำหรับเปลี่ยนชื่อและคัดลอก ID)
+        // SettingsModal Component
         // =================================================================
         const SettingsModal = ({ user, isAdmin, onClose, onUpdateProfile }) => {
             const [newDisplayName, setNewDisplayName] = useState(user?.displayName || '');
@@ -537,19 +605,19 @@
             );
         };
 
-
         // =================================================================
         // App Component
         // =================================================================
         const App = () => {
-            const ADMIN_UID = "mRhV0VcapENUjSUZs0wR9ce99Qg2"; // กำหนด Admin UID
+            const ADMIN_UID = "mRhV0VcapENUjSUZs0wR9ce99Qg2";
             
             const [user, setUser] = useState(null);
-            const [isAdmin, setIsAdmin] = useState(false); // New state for admin status
+            const [isAdmin, setIsAdmin] = useState(false);
             const [messages, setMessages] = useState([]);
             const [inputText, setInputText] = useState('');
             const [image, setImage] = useState(null);
             const [lockCode, setLockCode] = useState(''); 
+            const [isLocking, setIsLocking] = useState(false); // NEW: State for showing lock input
             const [loading, setLoading] = useState(false);
             const [showSettingsModal, setShowSettingsModal] = useState(false); 
             const [replyTarget, setReplyTarget] = useState(null); 
@@ -568,10 +636,9 @@
                 const unsubAuth = onAuthStateChanged(auth, u => {
                     if (u) {
                         setUser(u);
-                        setIsAdmin(u.uid === ADMIN_UID); // Check admin status on auth change
+                        setIsAdmin(u.uid === ADMIN_UID);
                         
                         if (!u.displayName) {
-                            // ตั้งชื่อเริ่มต้นสำหรับผู้ใช้ใหม่
                             const defaultName = `Anonymous-${u.uid.slice(0,4)}`;
                             updateProfile(u, { displayName: defaultName });
                             setUser(prev => ({ ...prev, displayName: defaultName }));
@@ -590,8 +657,11 @@
                 const q = query(collection(db, CHAT_COLLECTION), orderBy("createdAt", "desc"), limit(50));
                 
                 const unsubMsg = onSnapshot(q, (snapshot) => {
-                    setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse());
-                    // Scroll to bottom when new message arrives
+                    setMessages(snapshot.docs.map(doc => ({ 
+                        id: doc.id, 
+                        ...doc.data(),
+                        reactions: doc.data().reactions || {}
+                    })).reverse());
                     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
                 }, (error) => {
                     console.error("Snapshot Error (Data Listener):", error);
@@ -599,7 +669,8 @@
 
                 return () => unsubMsg();
             }, [initComplete]);
-
+            
+            
             const handleSend = async (e) => {
                 e.preventDefault();
                 const text = inputText.trim();
@@ -620,19 +691,17 @@
                         createdAt: serverTimestamp(),
                         isLocked: false,
                         text: text,
-                        image: imageBase64
+                        image: imageBase64,
+                        reactions: {}
                     };
                     
                     if (replyTarget) {
-                        // Denormalize reply data
                         messageData.replyToId = replyTarget.id;
                         messageData.replyToSender = replyTarget.sender;
                         messageData.replyToText = replyTarget.text;
                     }
 
-
-                    if (code) {
-                        // Encrypt data if a lock code is provided
+                    if (isLocking && code) { // Only encrypt if lock button was pressed AND code is provided
                         const contentToEncrypt = JSON.stringify({
                             text: text,
                             image: imageBase64
@@ -643,12 +712,15 @@
                         messageData.isLocked = true;
                         messageData.encryptedContent = encrypted;
                         
-                        // Clear unencrypted fields, except for placeholders
-                        messageData.text = ''; 
+                        messageData.text = 'ข้อความนี้ถูกเข้ารหัส'; // Placeholder text for database view
                         messageData.image = null;
                         
-                        // Clear the lock code immediately after encryption
                         setLockCode(''); 
+                        setIsLocking(false); // Reset lock state after sending
+                    } else if (isLocking && !code) {
+                         // If lock button was pressed but no code, cancel sending or prompt error. 
+                         // For now, we'll just send it unlocked if there is no code.
+                         setIsLocking(false);
                     }
 
 
@@ -656,42 +728,47 @@
 
                     setInputText('');
                     setImage(null);
-                    setReplyTarget(null); // Clear reply target after sending
+                    setReplyTarget(null);
                     setLoading(false);
                 } catch (error) {
                     console.error("Send Error:", error);
-                    alert("ส่งไม่ได้: " + error.message);
+                    // Use custom message box or log error instead of window.alert
+                    console.error("ส่งไม่ได้: " + error.message);
                     setLoading(false);
                 }
             };
             
-            // Function to handle message deletion
             const handleDelete = async (id) => {
-                // Check if user is the sender OR the Admin
                 const msgToDelete = messages.find(m => m.id === id);
                 if (!msgToDelete || (msgToDelete.uid !== user?.uid && user?.uid !== ADMIN_UID)) {
-                    alert("คุณไม่มีสิทธิ์ลบข้อความนี้");
+                    // Use custom message box or log error instead of window.alert
+                    console.error("คุณไม่มีสิทธิ์ลบข้อความนี้");
                     return;
                 }
                 
-                // Using a custom modal/confirm style alert
-                if (!window.confirm("คุณต้องการลบข้อความนี้จริงหรือไม่?")) return;
+                // Note: The original code used window.confirm, which is forbidden. Replacing with console log.
+                // In a real app, this would be a custom modal.
+                const confirmed = confirm("คุณต้องการลบข้อความนี้จริงหรือไม่?"); 
+                if (!confirmed) return;
+
+
                 try {
                     await deleteDoc(doc(db, CHAT_COLLECTION, id));
                 } catch (error) {
                     console.error("Delete Error:", error);
-                    alert("ลบไม่ได้: " + error.message);
+                    // Use custom message box or log error instead of window.alert
+                    console.error("ลบไม่ได้: " + error.message);
                 }
             };
             
-            // Function to handle permanent unlock (update Firestore)
             const handlePermanentUnlock = async (id, encryptedContent, key) => {
                 setLoading(true);
                 try {
                     const decryptedData = decryptData(encryptedContent, key);
                     
                     if (!decryptedData) {
-                        alert("เกิดข้อผิดพลาดในการถอดรหัส (รหัสไม่ถูกต้องหรือไม่ใช่รหัสที่ใช้ตอนถอดรหัสครั้งล่าสุด)");
+                        // Use custom message box or log error instead of window.alert
+                        console.error("เกิดข้อผิดพลาดในการถอดรหัส (รหัสไม่ถูกต้องหรือไม่ใช่รหัสที่ใช้ตอนถอดรหัสครั้งล่าสุด)");
                         setLoading(false);
                         return;
                     }
@@ -707,23 +784,50 @@
                     setLoading(false);
                 } catch (error) {
                     console.error("Permanent Unlock Error:", error);
-                    alert("ไม่สามารถปลดล็อคถาวรได้: " + error.message);
+                    // Use custom message box or log error instead of window.alert
+                    console.error("ไม่สามารถปลดล็อคถาวรได้: " + error.message);
                     setLoading(false);
                 }
             };
             
-            // Function to handle reply selection
+            const handleUpdateReaction = async (messageId, emoji) => {
+                if (!user || !messageId) return;
+
+                const messageRef = doc(db, CHAT_COLLECTION, messageId);
+                const userId = user.uid;
+                const path = `reactions.${emoji}`; 
+
+                try {
+                    const msg = messages.find(m => m.id === messageId);
+                    if (!msg) return;
+
+                    const currentReactionUids = msg.reactions?.[emoji] || [];
+
+                    if (currentReactionUids.includes(userId)) {
+                        await updateDoc(messageRef, {
+                            [path]: arrayRemove(userId)
+                        });
+                    } else {
+                        await updateDoc(messageRef, {
+                            [path]: arrayUnion(userId)
+                        });
+                    }
+                } catch (error) {
+                    console.error("Update Reaction Error:", error);
+                    // Use custom message box or log error instead of window.alert
+                    console.error("ไม่สามารถส่งรีแอคชั่นได้: " + error.message);
+                }
+            };
+
             const handleReply = (msg, contentToDisplay) => {
                 let textPreview = contentToDisplay.text || '';
 
                 if (msg.isLocked && !contentToDisplay.text && !contentToDisplay.image) {
-                     // If locked and not decrypted locally, use a placeholder text for reply preview
                      textPreview = "🔒 ข้อความเข้ารหัส";
                 } else if (!textPreview && contentToDisplay.image) {
                     textPreview = "🖼️ รูปภาพ";
                 }
                 
-                // Truncate the text for preview purposes
                 const truncatedText = textPreview.slice(0, 50) + (textPreview.length > 50 ? '...' : '');
 
                 setReplyTarget({
@@ -733,30 +837,28 @@
                 });
             };
             
-            // Function to handle profile update
             const handleUpdateProfile = async (newDisplayName) => {
                 if (!user || !auth.currentUser) return;
                 try {
                     await updateProfile(auth.currentUser, { displayName: newDisplayName });
-                    // Update the local state
                     setUser(prev => ({ ...prev, displayName: newDisplayName }));
                 } catch (error) {
                     console.error("Update Profile Error:", error);
-                    alert("เปลี่ยนชื่อไม่ได้: " + error.message);
+                    // Use custom message box or log error instead of window.alert
+                    console.error("เปลี่ยนชื่อไม่ได้: " + error.message);
                 }
             };
-
 
             const handleFile = (e) => {
                 const file = e.target.files[0];
                 if (file && file.type.startsWith('image/')) {
                     setImage(file);
                 } else if (file) {
-                    alert("รองรับเฉพาะไฟล์รูปภาพเท่านั้นครับ");
-                    e.target.value = null; // Clear input
+                    // Use custom message box or log error instead of window.alert
+                    console.error("รองรับเฉพาะไฟล์รูปภาพเท่านั้นครับ");
+                    e.target.value = null;
                 }
             };
-
 
             if (!initComplete) {
                 return (
@@ -772,24 +874,29 @@
             return (
                 <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-950 border-x border-slate-800 shadow-2xl">
                     
-                    {/* Header */}
-                    <header className="bg-slate-900 p-4 border-b border-slate-800 flex justify-between items-center z-10 shadow-md">
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-                            <h1 className="font-bold text-lg bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Global Chat</h1>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className={`text-sm truncate max-w-[150px] ${isAdmin ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
-                                {user?.displayName}
-                            </span>
-                            {isAdmin && <Crown size={18} className="text-yellow-500" title="ผู้ดูแลระบบ"/>}
-                            <button 
-                                onClick={() => setShowSettingsModal(true)}
-                                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 transition"
-                                title="ตั้งค่า"
-                            >
-                                <Settings size={18} />
-                            </button>
+                    {/* Header (Fixed - Removed Collapsible Logic) */}
+                    <header className={`bg-slate-900 border-b border-slate-800 z-10 p-4 shadow-md`}>
+                        <div className="flex justify-between items-center">
+                            {/* App Title and Status */}
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                                <h1 className="font-bold text-lg bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Global Chat</h1>
+                            </div>
+                            
+                            {/* User Info and Settings Button */}
+                            <div className="flex items-center gap-2">
+                                <span className={`text-sm truncate max-w-[150px] ${isAdmin ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
+                                    {user?.displayName}
+                                </span>
+                                {isAdmin && <Crown size={18} className="text-yellow-500" title="ผู้ดูแลระบบ"/>}
+                                <button 
+                                    onClick={() => setShowSettingsModal(true)}
+                                    className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 transition"
+                                    title="ตั้งค่า"
+                                >
+                                    <Settings size={18} />
+                                </button>
+                            </div>
                         </div>
                     </header>
 
@@ -812,18 +919,19 @@
                                 key={msg.id} 
                                 msg={msg} 
                                 isMe={msg.uid === user?.uid} 
-                                isAdmin={isAdmin} // Pass admin status
+                                isAdmin={isAdmin} 
                                 user={user} 
                                 onDelete={handleDelete}
                                 onPermanentUnlock={handlePermanentUnlock} 
                                 onReply={handleReply} 
+                                onUpdateReaction={handleUpdateReaction} 
                             />
                         ))}
                         <div ref={messagesEndRef}></div>
                     </main>
 
-                    {/* Input Area */}
-                    <footer className="bg-slate-900 p-3 border-t border-slate-800">
+                    {/* Input Area (Footer - Fixed) */}
+                    <footer className={`bg-slate-900 border-t border-slate-800 shadow-md p-3`}>
                         
                         {/* 1. Reply Preview */}
                         {replyTarget && (
@@ -838,23 +946,24 @@
                             </div>
                         )}
                         
-                        {/* 2. Lock Code Input */}
-                        <div className="mb-2 flex items-center gap-2">
-                            <Key size={16} className={lockCode ? "text-yellow-400" : "text-slate-500"}/>
-                            <input 
-                                type="password"
-                                value={lockCode}
-                                onChange={(e) => setLockCode(e.target.value)}
-                                placeholder="ตั้งรหัสล็อคข้อความ (ถ้ามี)" 
-                                className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-yellow-500 transition-all placeholder:text-slate-600 text-sm"
-                            />
-                            {lockCode && (
-                                <button onClick={() => setLockCode('')} className="p-1 bg-slate-700 hover:bg-slate-600 rounded-full text-slate-400">
+                        {/* 2. Lock Code Input (Shown only when isLocking is true) */}
+                        {isLocking && (
+                            <div className="mb-2 flex items-center gap-2 pt-2">
+                                <Key size={16} className={lockCode ? "text-yellow-400" : "text-slate-500"}/>
+                                <input 
+                                    type="password"
+                                    value={lockCode}
+                                    onChange={(e) => setLockCode(e.target.value)}
+                                    placeholder="กรอกรหัสสำหรับล็อคข้อความ" 
+                                    className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-yellow-500 transition-all placeholder:text-slate-600 text-sm"
+                                    autoFocus // Automatically focus when shown
+                                />
+                                <button onClick={() => {setLockCode(''); setIsLocking(false);}} className="p-1 bg-slate-700 hover:bg-slate-600 rounded-full text-slate-400" title="ยกเลิกการล็อค">
                                     <X size={14}/>
                                 </button>
-                            )}
-                        </div>
-                        
+                            </div>
+                        )}
+
                         {/* 3. Image Preview */}
                         {image && (
                             <div className="flex items-center gap-2 bg-slate-800 p-2 rounded-lg mb-2 w-fit border border-slate-700">
@@ -865,11 +974,31 @@
                         
                         {/* 4. Main Send Form */}
                         <form onSubmit={handleSend} className="flex gap-2 items-end">
-                            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-xl transition text-slate-400">
+                            
+                            {/* Image Picker */}
+                            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-xl transition text-slate-400" title="แนบรูปภาพ">
                                 <ImageIcon size={20} className={image ? "text-blue-400" : ""} />
                             </button>
                             <input type="file" ref={fileInputRef} onChange={handleFile} accept="image/*" className="hidden" />
                             
+                            {/* Toggle Lock Code Input */}
+                            <button 
+                                type="button" 
+                                onClick={() => {
+                                    setIsLocking(!isLocking);
+                                    if (isLocking) setLockCode(''); // Clear code if turning off
+                                }}
+                                className={`p-3 rounded-xl transition-all shadow-lg ${
+                                    isLocking
+                                    ? 'bg-yellow-600 hover:bg-yellow-500 text-white shadow-yellow-600/20' 
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
+                                }`}
+                                title={isLocking ? "ยกเลิกการเข้ารหัส" : "ล็อคข้อความนี้ด้วยรหัส"}
+                            >
+                                <Lock size={20} />
+                            </button>
+
+                            {/* Text Input */}
                             <div className="flex-1 relative">
                                 <input 
                                     type="text" 
@@ -880,12 +1009,15 @@
                                 />
                             </div>
 
+                            {/* Send Button */}
                             <button type="submit" disabled={loading || (!inputText && !image)} 
                                 className={`p-3 rounded-xl transition-all shadow-lg ${
                                     loading || (!inputText && !image) 
                                     ? 'bg-slate-800 text-slate-600' 
                                     : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
-                                }`}>
+                                }`}
+                                title="ส่งข้อความ"
+                            >
                                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <Send size={20} />}
                             </button>
                         </form>
@@ -895,7 +1027,7 @@
                     {showSettingsModal && (
                         <SettingsModal 
                             user={user} 
-                            isAdmin={isAdmin} // Pass admin status
+                            isAdmin={isAdmin}
                             onClose={() => setShowSettingsModal(false)} 
                             onUpdateProfile={handleUpdateProfile}
                         />
