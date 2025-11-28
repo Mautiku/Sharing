@@ -108,7 +108,7 @@
                 }
                 return parsed; 
             } catch (e) {
-                console.error("Decryption failed:", e);
+                // console.error("Decryption failed for key:", key, e); // Uncomment for debugging
                 return null;
             }
         };
@@ -124,7 +124,7 @@
         }
 
         // =================================================================
-        // NEW: Relative Time Formatting
+        // Relative Time Formatting
         // =================================================================
         const formatDisplayTime = (timestamp) => {
             if (!timestamp) return '...';
@@ -173,18 +173,18 @@
         // =================================================================
         // MessageItem Component
         // =================================================================
-        const MessageItem = ({ msg, isMe, isAdmin, user, onDelete, onPermanentUnlock, onReply, onUpdateReaction }) => {
+        const MessageItem = ({ msg, isMe, isAdmin, user, onDelete, onPermanentUnlock, onReply, onUpdateReaction, creatorBypassKey }) => {
             const [decryptedContent, setDecryptedContent] = useState(null);
             const [isAttemptingDecrypt, setIsAttemptingDecrypt] = useState(false);
             const [isConfirmingUnlock, setIsConfirmingUnlock] = useState(false); 
             const [decryptKey, setDecryptKey] = useState('');
             const [error, setError] = useState('');
+            const [usedBypass, setUsedBypass] = useState(false); // NEW: Track if creator bypass was used
             
             const [swipeOffset, setSwipeOffset] = useState(0);
             const touchStartRef = useRef(0);
             const SWIPE_THRESHOLD = 50;
             
-            // NEW: State for context menu and copy feedback
             const [showContextMenu, setShowContextMenu] = useState(false);
             const [copyStatus, setCopyStatus] = useState('');
             const longPressTimerRef = useRef(null);
@@ -192,7 +192,7 @@
             const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥']; 
 
             // =================================================================
-            // NEW: Copy Function
+            // Copy Function
             // =================================================================
             const handleCopyText = (text) => {
                 try {
@@ -212,6 +212,9 @@
                 }, 1500);
             };
 
+            // =================================================================
+            // UPDATED: Decrypt Function with Creator Bypass Logic
+            // =================================================================
             const handleDecrypt = () => {
                 setError('');
                 if (!decryptKey.trim()) {
@@ -219,17 +222,35 @@
                     return;
                 }
                 
-                const data = decryptData(msg.encryptedContent, decryptKey);
+                let data = null;
+                setUsedBypass(false); 
+
+                // 1. Attempt decryption with user's provided key
+                data = decryptData(msg.encryptedContent, decryptKey); 
+                
+                // 2. Creator Bypass Logic (If standard key failed)
+                if (!data && isMe && msg.masterEncryptedContent && creatorBypassKey) {
+                    // Since the user is the creator and standard decryption failed, 
+                    // we attempt decryption with the Master Bypass Key
+                    data = decryptData(msg.masterEncryptedContent, creatorBypassKey);
+                    
+                    if (data) {
+                        // Bypass successful! This satisfies the "any key is correct" request for the creator.
+                        setUsedBypass(true); 
+                    }
+                }
                 
                 if (data) {
                     setDecryptedContent(data);
                     setIsAttemptingDecrypt(false);
                     setError(''); 
                 } else {
+                    // Only show error if BOTH user key and master bypass failed (or if not creator)
                     setError('รหัสไม่ถูกต้อง');
                 }
             };
             
+            // Handle Admin Decrypt (Unchanged)
             const handleAdminDecrypt = () => {
                 const data = decryptData(msg.encryptedContent, 'admin_master_key_for_dev_test'); 
                 if (data) {
@@ -239,33 +260,36 @@
                 }
             };
             
+            // Handle Relock (Unchanged)
             const handleRelock = () => {
                 setDecryptedContent(null);
                 setIsAttemptingDecrypt(false);
                 setIsConfirmingUnlock(false);
                 setDecryptKey('');
                 setError('');
-                setShowContextMenu(false); // Close context menu on relock
+                setUsedBypass(false);
+                setShowContextMenu(false); 
             };
             
+            // Handle Unlock Confirmed (Unchanged - requires original key, not bypass key)
             const handleUnlockConfirmed = async () => {
                 if (!decryptedContent || !msg.encryptedContent || !decryptKey) {
                     console.error('เกิดข้อผิดพลาดในการปลดล็อคถาวร: ข้อมูลไม่ครบถ้วน');
                     setIsConfirmingUnlock(false);
                     return;
                 }
+                // Important: Permanent unlock must use the original key, so we use decryptKey here.
                 await onPermanentUnlock(msg.id, msg.encryptedContent, decryptKey);
                 handleRelock(); 
             }
 
             // =================================================================
-            // Updated Touch/Context Handlers
+            // Touch/Context Handlers (Unchanged)
             // =================================================================
             const handleTouchStart = (e) => {
                 touchStartRef.current = e.touches[0].clientX;
                 setSwipeOffset(0); 
 
-                // Start long press timer for context menu
                 longPressTimerRef.current = setTimeout(() => {
                     if (!isLocked || decryptedContent) {
                         setShowContextMenu(true);
@@ -338,10 +362,9 @@
                     onTouchEnd={handleTouchEnd}
                     onContextMenu={handleContextMenu}
                 >
-                    {/* Context Menu Modal (Conditionally rendered on long press/right click) */}
+                    {/* Context Menu Modal */}
                     {showContextMenu && (
                         <>
-                            {/* Overlay to close menu when clicking outside */}
                             <div className="fixed inset-0 z-10" onClick={() => setShowContextMenu(false)}></div>
                             <div 
                                 className="absolute z-20 p-2 rounded-xl bg-slate-800/95 backdrop-blur-sm shadow-2xl border border-slate-700 flex flex-col gap-2 transform -translate-y-full mb-2 w-48"
@@ -389,7 +412,7 @@
                         <CornerUpLeft size={24} className="text-blue-400"/>
                     </div>
 
-                    {/* Reply Quote Block (if this message is a reply) */}
+                    {/* Reply Quote Block */}
                     {msg.replyToId && (
                         <div className={`text-xs text-slate-400 mb-1 px-3 py-1 rounded-t-lg max-w-[85%] ${replyQuoteClasses} border-l-2 border-blue-400`}>
                             <span className="font-semibold text-blue-300">ตอบกลับ {msg.replyToSender}</span>
@@ -409,7 +432,7 @@
                             <CornerUpLeft size={14} />
                         </button>
                         
-                        {/* 2. Delete Button (If it's my message OR I'm an admin) */}
+                        {/* 2. Delete Button */}
                         {(isMe || isAdmin) && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onDelete(msg.id); }} 
@@ -420,7 +443,7 @@
                             </button>
                         )}
                         
-                        {/* 3. Permanent Unlock Button (If it's my decrypted message) */}
+                        {/* 3. Permanent Unlock Button */}
                         {showPermanentUnlock && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); setIsConfirmingUnlock(true); }}
@@ -431,7 +454,7 @@
                             </button>
                         )}
 
-                        {/* 4. Local Relock Icon (If decrypted locally) */}
+                        {/* 4. Local Relock Icon */}
                         {isDecrypted && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleRelock(); }} 
@@ -442,12 +465,12 @@
                             </button>
                         )}
                         
-                        {/* 5. Lock Status Icon (If locked and not decrypted) */}
+                        {/* 5. Lock Status Icon */}
                         {isLocked && !isDecrypted && (
                             <Lock size={12} className="text-red-400" title="ข้อความถูกล็อค" />
                         )}
                         
-                        {/* 6. Sender Name and Time - UPDATED TIME FUNCTION */}
+                        {/* 6. Sender Name and Time */}
                         <span className={`text-[10px] text-slate-500`}>{formatDisplayTime(msg.createdAt)}</span>
                         
                         <span className={`text-xs ${senderNameClasses}`}>
@@ -456,7 +479,7 @@
                         </span>
                     </div>
                     
-                    {/* Message Bubble (with swipe translation) */}
+                    {/* Message Bubble */}
                     <div 
                         style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.15s ease-out' : 'none' }}
                         className={`max-w-[85%] rounded-2xl p-3 ${
@@ -512,8 +535,13 @@
                                         {isMe && (
                                             <p className="text-xs text-yellow-300/80 bg-slate-700/50 p-2 rounded-lg border border-yellow-700/50">
                                                 <Key size={12} className="inline mr-1 text-yellow-400"/>
-                                                ในฐานะผู้สร้างข้อความ, คุณต้องป้อนรหัสที่คุณตั้งไว้เพื่อเปิดอ่านเท่านั้น 
-                                                <span className="font-bold text-red-400"> (รหัสจะไม่ถูกเก็บไว้ในระบบ)</span>
+                                                ในฐานะผู้สร้าง: คุณสามารถป้อนรหัสใดก็ได้เพื่อเปิดอ่าน (ระบบจะใช้ Master Key สำรอง)
+                                            </p>
+                                        )}
+                                        {!isMe && (
+                                            <p className="text-xs text-red-300/80 bg-slate-700/50 p-2 rounded-lg border border-red-700/50">
+                                                <Key size={12} className="inline mr-1 text-red-400"/>
+                                                คุณต้องป้อนรหัสที่ถูกต้องเพื่อเปิดอ่านข้อความนี้
                                             </p>
                                         )}
 
@@ -553,6 +581,11 @@
                         ) : (
                             /* 3. Unlocked / Regular Content */
                             <>
+                                {usedBypass && (
+                                    <p className="mb-2 text-xs font-semibold text-yellow-300/80 bg-slate-700/50 p-1.5 rounded-lg border border-yellow-700/50">
+                                        <ShieldCheck size={12} className="inline mr-1"/> (เปิดด้วย Creator Bypass Key สำรอง)
+                                    </p>
+                                )}
                                 {contentToDisplay.text && <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{contentToDisplay.text}</p>}
                                 {contentToDisplay.image && (
                                     // Image Download
@@ -710,6 +743,8 @@
         // =================================================================
         const App = () => {
             const ADMIN_UID = "mRhV0VcapENUjSUZs0wR9ce99Qg2";
+            // NEW: Master Key for Creator Bypass (for development/test purposes only)
+            const CREATOR_MASTER_BYPASS_KEY = "creator-unlock-key-123"; 
             
             const [user, setUser] = useState(null);
             const [isAdmin, setIsAdmin] = useState(false);
@@ -807,17 +842,23 @@
                             image: imageBase64
                         });
                         
-                        const encrypted = CryptoJS.AES.encrypt(contentToEncrypt, code).toString();
+                        // 1. Encrypt with user's key (standard)
+                        const userEncrypted = CryptoJS.AES.encrypt(contentToEncrypt, code).toString();
+                        
+                        // 2. Encrypt with Creator Master Bypass Key (for creator's guaranteed access)
+                        const masterEncrypted = CryptoJS.AES.encrypt(contentToEncrypt, CREATOR_MASTER_BYPASS_KEY).toString();
 
                         messageData.isLocked = true;
-                        messageData.encryptedContent = encrypted;
-                        
+                        messageData.encryptedContent = userEncrypted;
+                        messageData.masterEncryptedContent = masterEncrypted; // NEW FIELD FOR BYPASS
+
                         messageData.text = 'ข้อความนี้ถูกเข้ารหัส'; 
                         messageData.image = null;
                         
                         setLockCode(''); 
                         setIsLocking(false); 
                     } else if (isLocking && !code) {
+                         // If locking was attempted but no code provided, reset
                          setIsLocking(false);
                     }
 
@@ -857,6 +898,7 @@
             const handlePermanentUnlock = async (id, encryptedContent, key) => {
                 setLoading(true);
                 try {
+                    // Must use the user's original key for permanent unlock
                     const decryptedData = decryptData(encryptedContent, key);
                     
                     if (!decryptedData) {
@@ -871,6 +913,7 @@
                         text: decryptedData.text || '', 
                         image: decryptedData.image || null, 
                         encryptedContent: deleteField(), 
+                        masterEncryptedContent: deleteField(), // Remove master bypass content too
                     });
                     
                     setLoading(false);
@@ -1013,6 +1056,7 @@
                                 onPermanentUnlock={handlePermanentUnlock} 
                                 onReply={handleReply} 
                                 onUpdateReaction={handleUpdateReaction} 
+                                creatorBypassKey={CREATOR_MASTER_BYPASS_KEY} // Pass the master key down
                             />
                         ))}
                         <div ref={messagesEndRef}></div>
@@ -1042,7 +1086,7 @@
                                     type="password"
                                     value={lockCode}
                                     onChange={(e) => setLockCode(e.target.value)}
-                                    placeholder="กรอกรหัสสำหรับล็อคข้อความ" 
+                                    placeholder="กรอกรหัสสำหรับล็อคข้อความ (จำเป็นต้องใช้รหัสนี้)" 
                                     className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-yellow-500 transition-all placeholder:text-slate-600 text-sm"
                                     autoFocus 
                                 />
