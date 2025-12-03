@@ -2,1174 +2,352 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Global Chat - ส่งข้อความทั่วโลก (Admin Enabled)</title>
-    
-    <!-- Tailwind CSS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pictorial Writing Trainer</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- React & Firebase & Crypto Imports -->
-    <script type="importmap">
-    {
-        "imports": {
-            "react": "https://esm.sh/react@18.2.0",
-            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
-            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
-            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
-            "lucide-react": "https://esm.sh/lucide-react@0.344.0",
-            "crypto-js": "https://esm.sh/crypto-js@4.2.0"
+    <!-- Configure Tailwind to use 'dark' mode via class -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                },
+            },
         }
-    }
     </script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
     <style>
-        body { background-color: #0f172a; color: white; font-family: sans-serif; }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* Animation */
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(10px); }
+        /* Basic font and transition for smooth dark mode */
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        /* Custom scrollbar styling for better aesthetics */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background-color: #a8a8a8;
+            border-radius: 4px;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .msg-anim { animation: slideIn 0.3s ease-out forwards; }
     </style>
+    <!-- Lucide Icons (equivalent to React imports) -->
+    <script type="module">
+        import { createIcons, Check, RotateCcw, Eye, EyeOff, AlertCircle, Award, Sun, Moon } from 'https://unpkg.com/lucide@latest';
+        createIcons({ icons: { Check, RotateCcw, Eye, EyeOff, AlertCircle, Award, Sun, Moon } });
+    </script>
 </head>
-<body>
-    <div id="root"></div>
 
-    <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useRef } from 'react';
-        import { createRoot } from 'react-dom/client';
-        import { initializeApp } from 'firebase/app';
-        import { getAuth, signInAnonymously, onAuthStateChanged, updateProfile } from 'firebase/auth';
-        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, deleteDoc, doc, updateDoc, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
-        import { Send, Image as ImageIcon, X, Lock, Settings, Key, Eye, Trash2, Copy, User, CheckCircle, RotateCcw, CornerUpLeft, ShieldCheck, Crown } from 'lucide-react';
-        import CryptoJS from 'crypto-js';
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div class="max-w-4xl mx-auto py-8 px-4 space-y-8">
+        
+        <!-- Header -->
+        <header class="text-center space-y-2">
+          <h1 class="text-3xl font-bold text-blue-900 dark:text-blue-400">Pictorial Writing Trainer</h1>
+          <p class="text-gray-600 dark:text-gray-400">
+            ฝึกจำและเขียนข้อความจากภาพให้ถูกต้อง 100% (ทุกตัวอักษร เว้นวรรค และเครื่องหมาย)
+          </p>
+        </header>
 
-        // ==========================================
-        //  Firebase Configuration (ใช้ค่าเริ่มต้น)
-        // ==========================================
-        const firebaseConfig = {
-            apiKey: "AIzaSyDQdsojcaTs1jrXdzrfl2P9r3fhKox1uC8",
-            authDomain: "sharing-d783e.firebaseapp.com",
-            projectId: "sharing-d783e",
-            storageBucket: "sharing-d783e.firebasestorage.app",
-            messagingSenderId: "231742713780",
-            appId: "1:231742713780:web:40b4493a63aebbd061cce1",
-            measurementId: "G-T91M0M6SJZ"
-        };
-        // ==========================================
+        <!-- Control Bar -->
+        <div id="control-bar" class="flex justify-between items-center p-4 rounded-lg shadow-md 
+                      bg-white dark:bg-gray-800 transition-colors">
+            <div class="flex items-center gap-4">
+                <!-- Dark Mode Toggle Button -->
+                <button id="dark-mode-toggle" class="p-2 rounded-full text-gray-700 dark:text-yellow-400 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" aria-label="Toggle Dark Mode">
+                    <i data-lucide="moon" id="moon-icon" class="w-5 h-5 hidden"></i>
+                    <i data-lucide="sun" id="sun-icon" class="w-5 h-5 hidden"></i>
+                </button>
+              
+                <div class="flex items-center gap-2">
+                    <span class="font-semibold text-gray-700 dark:text-gray-300">ต้นฉบับ:</span>
+                    <button id="toggle-reference" class="flex items-center gap-2 px-3 py-1.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-900 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-700 transition-colors text-sm font-medium">
+                        <i data-lucide="eye-off" id="eye-off-icon" class="w-4 h-4"></i>
+                        <i data-lucide="eye" id="eye-icon" class="w-4 h-4 hidden"></i>
+                        <span id="reference-text">ซ่อน</span>
+                    </button>
+                </div>
+            </div>
+            <div id="status" class="text-sm text-gray-500 dark:text-gray-400">
+                สถานะ: ยังไม่เริ่ม
+            </div>
+        </div>
 
-        // Initialize Firebase
-        let app, auth, db;
-        try {
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-        } catch (e) {
-            console.error("Firebase Init Error:", e);
+        <!-- Reference Area -->
+        <div id="reference-area" class="animate-fade-in space-y-2">
+            <div class="mb-2 text-xs uppercase tracking-wide font-semibold ml-1 
+                        text-gray-400 dark:text-gray-500">Original Text</div>
+            <div id="reference-content" class="font-sans leading-relaxed text-lg p-6 rounded shadow-sm border 
+                        bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700
+                        text-gray-800 dark:text-gray-200">
+                <!-- Content will be injected by JS -->
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="space-y-2">
+            <div class="flex justify-between items-end">
+                <label for="user-input" class="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1">พื้นที่ฝึกพิมพ์ของคุณ</label>
+                <span class="text-xs text-gray-400 dark:text-gray-500">ห้ามใส่เครื่องหมาย _ (ขีดเส้นใต้) ให้พิมพ์แค่ตัวอักษร</span>
+            </div>
+            <textarea
+                id="user-input"
+                placeholder="พิมพ์ข้อความที่นี่... (เริ่มด้วยชื่อเรื่อง แล้วขึ้นบรรทัดใหม่เพื่อเขียนเนื้อหา)"
+                class="w-full h-64 p-6 rounded-lg border shadow-inner text-lg leading-relaxed focus:ring-2 outline-none resize-y font-sans 
+                       bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100
+                       focus:ring-blue-500 focus:border-blue-500"
+                spellcheck="false"
+            ></textarea>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex gap-4 justify-center pt-2">
+            <button
+                id="reset-button"
+                class="flex items-center gap-2 px-6 py-3 rounded-full font-semibold transition-all
+                       bg-gray-200 text-gray-700 hover:bg-gray-300 
+                       dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+            >
+                <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                เริ่มใหม่
+            </button>
+            <button
+                id="check-button"
+                class="flex items-center gap-2 px-8 py-3 rounded-full font-bold text-white shadow-lg transition-all transform hover:scale-105 active:scale-95 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:dark:bg-gray-600 disabled:dark:text-gray-400"
+                disabled
+            >
+                <i data-lucide="check" class="w-5 h-5"></i>
+                ตรวจคำตอบ
+            </button>
+        </div>
+
+        <!-- Results Area -->
+        <div id="results-area" class="hidden">
+            <!-- Results will be injected by JS -->
+        </div>
+
+    </div>
+
+    <script>
+        // --- CONSTANTS ---
+        const TARGET_TITLE = "A Memorable Visit to the Golden Temple";
+        const TARGET_BODY = "Thailand is renowned for its breathtaking cultural heritage. This picture captures a magnificent moment at a famous tourist attraction, known as the Grand Palace. The scene features two beautiful women enjoying their holiday. Dressed in stylish outfits and wearing wide-brimmed hats to protect against the sun, they stroll gracefully across the stone floor. The background is truly stunning. One can see the majestic temples and the iconic golden stupa shining brightly under the clear sky, which is a lovely mix of blue and white. The area is beautifully decorated with green ornamental trees, adding a touch of nature to the sacred architecture. As they walk through this spiritual place, they might plan to pay respect to the Buddha or make merit. Their smiling faces clearly show that they are happy and impressed by the beauty of Thai culture.";
+        const FULL_TARGET = `${TARGET_TITLE}\n${TARGET_BODY}`;
+
+        // --- DOM ELEMENTS ---
+        const root = document.documentElement;
+        const userInput = document.getElementById('user-input');
+        const checkButton = document.getElementById('check-button');
+        const resetButton = document.getElementById('reset-button');
+        const toggleReferenceButton = document.getElementById('toggle-reference');
+        const referenceArea = document.getElementById('reference-area');
+        const referenceContent = document.getElementById('reference-content');
+        const resultsArea = document.getElementById('results-area');
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        const eyeIcon = document.getElementById('eye-icon');
+        const eyeOffIcon = document.getElementById('eye-off-icon');
+        const moonIcon = document.getElementById('moon-icon');
+        const sunIcon = document.getElementById('sun-icon');
+        const referenceTextSpan = document.getElementById('reference-text');
+        
+        let isReferenceVisible = true;
+
+        // --- DARK MODE LOGIC ---
+        function applyDarkMode(isDark) {
+            if (isDark) {
+                root.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+                moonIcon.classList.add('hidden');
+                sunIcon.classList.remove('hidden');
+            } else {
+                root.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+                moonIcon.classList.remove('hidden');
+                sunIcon.classList.add('hidden');
+            }
         }
 
-        // Image Compression Function
-        const compressImage = (file) => {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = (e) => {
-                    const img = new Image();
-                    img.src = e.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        const MAX_SIZE = 600;
-                        let w = img.width, h = img.height;
-                        if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE/w; w = MAX_SIZE; } }
-                        else { if (h > MAX_SIZE) { w *= MAX_SIZE/h; h = MAX_SIZE; } }
-                        canvas.width = w; canvas.height = h;
-                        canvas.getContext('2d').drawImage(img, 0, 0, w, w);
-                        resolve(canvas.toDataURL('image/jpeg', 0.7));
-                    };
-                };
+        function setupDarkMode() {
+            const savedMode = localStorage.getItem('theme');
+            let isDark = false;
+            if (savedMode) {
+                isDark = savedMode === 'dark';
+            } else {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            applyDarkMode(isDark);
+        }
+
+        darkModeToggle.addEventListener('click', () => {
+            const isCurrentlyDark = root.classList.contains('dark');
+            applyDarkMode(!isCurrentlyDark);
+        });
+
+        // --- INITIAL RENDER FUNCTIONS ---
+
+        function renderReferenceText() {
+            referenceContent.innerHTML = `
+                <h2 class="text-xl font-bold text-center mb-4 text-gray-900 dark:text-white">${TARGET_TITLE}</h2>
+                <p class="text-justify whitespace-pre-wrap">${TARGET_BODY}</p>
+            `;
+        }
+
+        function toggleReference() {
+            isReferenceVisible = !isReferenceVisible;
+            referenceArea.classList.toggle('hidden', !isReferenceVisible);
+            
+            eyeIcon.classList.toggle('hidden', !isReferenceVisible);
+            eyeOffIcon.classList.toggle('hidden', isReferenceVisible);
+            referenceTextSpan.textContent = isReferenceVisible ? 'ซ่อน' : 'แสดง';
+        }
+        
+        // --- CHECK LOGIC (Simplified Non-Cascading) ---
+        function renderResults(diff, isPerfect) {
+            resultsArea.classList.remove('hidden');
+            resultsArea.innerHTML = `
+                <div id="result-card" class="rounded-xl p-6 border-2 shadow-lg scroll-mt-10 ${
+                    isPerfect 
+                        ? 'border-green-500 bg-green-50 dark:bg-green-900' 
+                        : 'border-red-200 bg-white dark:bg-gray-800'
+                }">
+                    <div class="flex items-center gap-3 mb-4 border-b pb-4 border-gray-200 dark:border-gray-700">
+                        <div class="${isPerfect 
+                            ? 'bg-green-100 dark:bg-green-700 text-green-600 dark:text-green-300' 
+                            : 'bg-red-100 dark:bg-red-700 text-red-600 dark:text-red-300'} p-2 rounded-full">
+                            <i data-lucide="${isPerfect ? 'award' : 'alert-circle'}" class="w-8 h-8"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold ${
+                                isPerfect 
+                                    ? 'text-green-800 dark:text-green-300' 
+                                    : 'text-red-800 dark:text-red-300'
+                            }">
+                                ${isPerfect ? "สุดยอด! ถูกต้องทุกตัวอักษร" : "ยังไม่ถูกต้องร้อยเปอร์เซ็นต์"}
+                            </h3>
+                            ${!isPerfect ? '<p class="text-red-600 dark:text-red-400 text-sm">พบจุดผิดพลาดตามรายการด้านล่าง (สีแดง/สีเหลือง)</p>' : ''}
+                        </div>
+                    </div>
+
+                    <div id="diff-output" class="font-mono text-lg leading-loose break-words p-4 rounded border 
+                          bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 
+                          text-gray-800 dark:text-gray-100">
+                    </div>
+                    
+                    ${!isPerfect ? `
+                    <div class="mt-4 text-sm flex flex-wrap gap-4 
+                            text-gray-500 dark:text-gray-400">
+                         <div class="flex items-center gap-1"><span class="w-4 h-4 bg-green-100 dark:bg-green-700 text-green-600 dark:text-green-300 text-center text-xs border border-green-200 dark:border-green-600">A</span> ถูกต้อง</div>
+                         <div class="flex items-center gap-1"><span class="w-4 h-4 bg-red-200 dark:bg-red-600 text-red-800 dark:text-red-100 text-center text-xs border border-red-300 dark:border-red-500">A</span> พิมพ์ผิด (เอาเมาส์ชี้เพื่อดูเฉลย)</div>
+                         <div class="flex items-center gap-1"><span class="w-4 h-4 bg-yellow-200 dark:bg-yellow-600 text-yellow-800 dark:text-yellow-100 border border-yellow-400 text-center text-xs">_</span> ขาดตัวอักษร</div>
+                         <div class="flex items-center gap-1"><span class="w-4 h-4 bg-red-500 text-white text-center text-xs">A</span> พิมพ์เกินมา</div>
+                    </div>` : ''}
+                </div>
+            `;
+            
+            // Re-run createIcons for the newly injected icons
+            if (typeof createIcons !== 'undefined') {
+                 import('https://unpkg.com/lucide@latest').then(({ createIcons }) => {
+                     createIcons();
+                 });
+            }
+
+            const diffOutput = document.getElementById('diff-output');
+            diff.forEach(item => {
+                let span = document.createElement('span');
+                span.classList.add('inline-block', 'mx-0.5', 'relative', 'group');
+                let charDisplay = item.char === ' ' ? '␣' : (item.char === '\n' ? '↵' : item.char);
+
+                if (item.status === 'correct') {
+                    span.classList.add('text-green-600', 'dark:text-green-400');
+                    span.textContent = item.char;
+                } else if (item.status === 'wrong') {
+                    span.innerHTML = `<span class="bg-red-200 dark:bg-red-600 text-red-800 dark:text-red-100 px-1 rounded">${charDisplay}</span>`;
+                    let expectedChar = item.expected === ' ' ? 'เว้นวรรค' : (item.expected === '\n' ? 'ขึ้นบรรทัดใหม่' : item.expected);
+                    span.title = `แก้เป็น: ${expectedChar}`;
+                } else if (item.status === 'missing') {
+                    span.innerHTML = `<span class="bg-yellow-200 dark:bg-yellow-600 text-yellow-800 dark:text-yellow-100 px-1 rounded border border-yellow-400">_</span>`;
+                    let missingChar = item.char === ' ' ? 'เว้นวรรค' : (item.char === '\n' ? 'ขึ้นบรรทัดใหม่' : item.char);
+                    span.title = `ขาดตัว: ${missingChar}`;
+                } else if (item.status === 'extra') {
+                    span.innerHTML = `<span class="bg-red-500 text-white px-1 rounded">${charDisplay}</span>`;
+                    span.title = `พิมพ์เกิน`;
+                }
+                diffOutput.appendChild(span);
             });
-        };
-        
-        // Decryption function
-        const decryptData = (encryptedText, key) => {
-            if (!encryptedText || !key) return null;
-            try {
-                const bytes = CryptoJS.AES.decrypt(encryptedText, key);
-                const decryptedJson = bytes.toString(CryptoJS.enc.Utf8);
-                if (!decryptedJson) return null; 
-                const parsed = JSON.parse(decryptedJson);
-                if (typeof parsed.text !== 'string' && typeof parsed.image !== 'string' && parsed.image !== null) {
-                    return null;
-                }
-                return parsed; 
-            } catch (e) {
-                // console.error("Decryption failed for key:", key, e); // Uncomment for debugging
-                return null;
-            }
-        };
 
-        // Decrypt without key (for Admin bypass)
-        const decryptDataNoKey = (encryptedText) => {
-            if (!encryptedText) return null;
-            return {
-                text: "เนื้อหาถูกเข้ารหัส (เปิดอ่านโดย Admin)",
-                image: null,
-                encryptedContent: encryptedText
-            };
+            // Scroll to results
+            const resultCard = document.getElementById('result-card');
+            if (resultCard) {
+                resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
 
-        // =================================================================
-        // Relative Time Formatting
-        // =================================================================
-        const formatDisplayTime = (timestamp) => {
-            if (!timestamp) return '...';
-            try {
-                const now = new Date();
-                const msgDate = timestamp.toDate();
-                const timeStr = msgDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-                
-                // Define day boundaries based on the current date
-                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const yesterday = new Date(today.getTime() - (24 * 60 * 60 * 1000));
-                const dayBeforeYesterday = new Date(yesterday.getTime() - (24 * 60 * 60 * 1000));
-                
-                // Use message date to compare with boundaries (ignoring time component)
-                const msgDay = new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate());
+        function handleCheck() {
+            const input = userInput.value;
+            const target = FULL_TARGET;
+            const diff = [];
+            let errorCount = 0;
+            const maxLength = Math.max(input.length, target.length);
 
-                if (msgDay.getTime() === today.getTime()) {
-                    // Check for relative time within today
-                    const diffMinutes = Math.floor((now.getTime() - msgDate.getTime()) / (1000 * 60));
-                    if (diffMinutes < 1) return 'เมื่อสักครู่';
-                    if (diffMinutes < 60) return `${diffMinutes} นาทีที่แล้ว`;
-                    return timeStr; // Today, show time only
-                }
-                
-                if (msgDay.getTime() === yesterday.getTime()) {
-                    return `เมื่อวาน ${timeStr}`;
-                }
-                
-                if (msgDay.getTime() === dayBeforeYesterday.getTime()) {
-                    return `เมื่อวานซืน ${timeStr}`;
-                }
+            for (let i = 0; i < maxLength; i++) {
+                const userChar = input[i];
+                const targetChar = target[i];
 
-                // For older messages: Day/Month/Year + Time
-                return msgDate.toLocaleDateString('th-TH', { 
-                    day: 'numeric', 
-                    month: 'short', 
-                    year: 'numeric' 
-                }) + ` ${timeStr}`;
-
-            } catch (e) {
-                // Fallback for invalid timestamps
-                return 'เมื่อสักครู่'; 
-            }
-        };
-
-        // =================================================================
-        // MessageItem Component
-        // =================================================================
-        const MessageItem = ({ msg, isMe, isAdmin, user, onDelete, onPermanentUnlock, onReply, onUpdateReaction, creatorBypassKey }) => {
-            const [decryptedContent, setDecryptedContent] = useState(null);
-            const [isAttemptingDecrypt, setIsAttemptingDecrypt] = useState(false);
-            const [isConfirmingUnlock, setIsConfirmingUnlock] = useState(false); 
-            const [decryptKey, setDecryptKey] = useState('');
-            const [error, setError] = useState('');
-            const [usedBypass, setUsedBypass] = useState(false); // NEW: Track if creator bypass was used
-            
-            const [swipeOffset, setSwipeOffset] = useState(0);
-            const touchStartRef = useRef(0);
-            const SWIPE_THRESHOLD = 50;
-            
-            const [showContextMenu, setShowContextMenu] = useState(false);
-            const [copyStatus, setCopyStatus] = useState('');
-            const longPressTimerRef = useRef(null);
-            
-            const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥']; 
-
-            // =================================================================
-            // Copy Function
-            // =================================================================
-            const handleCopyText = (text) => {
-                try {
-                    const el = document.createElement('textarea');
-                    el.value = text;
-                    document.body.appendChild(el);
-                    el.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(el);
-                    setCopyStatus('คัดลอกแล้ว!');
-                } catch (err) {
-                    setCopyStatus('คัดลอกไม่ได้');
-                }
-                setTimeout(() => {
-                    setCopyStatus('');
-                    setShowContextMenu(false); 
-                }, 1500);
-            };
-
-            // =================================================================
-            // UPDATED: Decrypt Function with Creator Bypass Logic
-            // =================================================================
-            const handleDecrypt = () => {
-                setError('');
-                if (!decryptKey.trim()) {
-                    setError('กรุณาใส่รหัส');
-                    return;
-                }
-                
-                let data = null;
-                setUsedBypass(false); 
-
-                // 1. Attempt decryption with user's provided key
-                data = decryptData(msg.encryptedContent, decryptKey); 
-                
-                // 2. Creator Bypass Logic (If standard key failed)
-                if (!data && isMe && msg.masterEncryptedContent && creatorBypassKey) {
-                    // Since the user is the creator and standard decryption failed, 
-                    // we attempt decryption with the Master Bypass Key
-                    data = decryptData(msg.masterEncryptedContent, creatorBypassKey);
-                    
-                    if (data) {
-                        // Bypass successful! This satisfies the "any key is correct" request for the creator.
-                        setUsedBypass(true); 
-                    }
-                }
-                
-                if (data) {
-                    setDecryptedContent(data);
-                    setIsAttemptingDecrypt(false);
-                    setError(''); 
+                if (userChar === targetChar) {
+                    diff.push({ status: 'correct', char: userChar });
                 } else {
-                    // Only show error if BOTH user key and master bypass failed (or if not creator)
-                    setError('รหัสไม่ถูกต้อง');
-                }
-            };
-            
-            // Handle Admin Decrypt (Unchanged)
-            const handleAdminDecrypt = () => {
-                const data = decryptData(msg.encryptedContent, 'admin_master_key_for_dev_test'); 
-                if (data) {
-                    setDecryptedContent(data);
-                } else {
-                    setDecryptedContent(decryptDataNoKey(msg.encryptedContent));
-                }
-            };
-            
-            // Handle Relock (Unchanged)
-            const handleRelock = () => {
-                setDecryptedContent(null);
-                setIsAttemptingDecrypt(false);
-                setIsConfirmingUnlock(false);
-                setDecryptKey('');
-                setError('');
-                setUsedBypass(false);
-                setShowContextMenu(false); 
-            };
-            
-            // Handle Unlock Confirmed (Unchanged - requires original key, not bypass key)
-            const handleUnlockConfirmed = async () => {
-                if (!decryptedContent || !msg.encryptedContent || !decryptKey) {
-                    console.error('เกิดข้อผิดพลาดในการปลดล็อคถาวร: ข้อมูลไม่ครบถ้วน');
-                    setIsConfirmingUnlock(false);
-                    return;
-                }
-                // Important: Permanent unlock must use the original key, so we use decryptKey here.
-                await onPermanentUnlock(msg.id, msg.encryptedContent, decryptKey);
-                handleRelock(); 
-            }
-
-            // =================================================================
-            // Touch/Context Handlers (Unchanged)
-            // =================================================================
-            const handleTouchStart = (e) => {
-                touchStartRef.current = e.touches[0].clientX;
-                setSwipeOffset(0); 
-
-                longPressTimerRef.current = setTimeout(() => {
-                    if (!isLocked || decryptedContent) {
-                        setShowContextMenu(true);
-                    }
-                    setSwipeOffset(0);
-                }, 500);
-            };
-
-            const handleTouchMove = (e) => {
-                const currentX = e.touches[0].clientX;
-                const diff = currentX - touchStartRef.current;
-                
-                if (Math.abs(diff) > 10) { 
-                    clearTimeout(longPressTimerRef.current);
-                }
-
-                if (diff > 0) {
-                    setSwipeOffset(Math.min(SWIPE_THRESHOLD * 1.5, diff));
-                } else {
-                    setSwipeOffset(0);
-                }
-            };
-
-            const handleTouchEnd = () => {
-                clearTimeout(longPressTimerRef.current);
-                
-                if (!showContextMenu && swipeOffset >= SWIPE_THRESHOLD) {
-                    onReply(msg, contentToDisplay);
-                }
-                setSwipeOffset(0);
-            };
-            
-            const handleContextMenu = (e) => {
-                e.preventDefault();
-                if (!isLocked || decryptedContent) {
-                    setShowContextMenu(true);
-                }
-            };
-
-            const handleReact = (emoji) => {
-                onUpdateReaction(msg.id, emoji);
-                setShowContextMenu(false);
-            };
-            
-
-            let contentToDisplay = decryptedContent || { 
-                text: msg.text, 
-                image: msg.image 
-            };
-            
-            const isLocked = msg.isLocked;
-            const isDecrypted = isLocked && decryptedContent;
-            const displayPlaceholder = isLocked && !decryptedContent;
-            const showPermanentUnlock = isMe && isDecrypted;
-            
-            const replyQuoteClasses = isMe ? 'self-end bg-blue-700/50' : 'self-start bg-slate-700/50';
-
-            const isSenderAdmin = msg.uid === 'mRhV0VcapENUjSUZs0wR9ce99Qg2';
-            
-            const senderNameClasses = isSenderAdmin 
-                ? 'text-yellow-400 font-extrabold flex items-center gap-1'
-                : (isMe ? 'text-blue-300 font-medium' : 'text-slate-400 font-medium');
-
-            return (
-                <div 
-                    key={msg.id} 
-                    className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} msg-anim relative`}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
-                    onContextMenu={handleContextMenu}
-                >
-                    {/* Context Menu Modal */}
-                    {showContextMenu && (
-                        <>
-                            <div className="fixed inset-0 z-10" onClick={() => setShowContextMenu(false)}></div>
-                            <div 
-                                className="absolute z-20 p-2 rounded-xl bg-slate-800/95 backdrop-blur-sm shadow-2xl border border-slate-700 flex flex-col gap-2 transform -translate-y-full mb-2 w-48"
-                                style={{ [isMe ? 'right' : 'left']: '10px', bottom: '0' }}
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                
-                                {/* 1. Copy Button */}
-                                {contentToDisplay.text && !contentToDisplay.image && (
-                                    <button 
-                                        onClick={() => handleCopyText(contentToDisplay.text)}
-                                        className="flex items-center gap-2 p-2 rounded-lg text-sm text-slate-200 hover:bg-slate-700/80 transition"
-                                    >
-                                        <Copy size={16}/> {copyStatus || 'คัดลอกข้อความ'}
-                                    </button>
-                                )}
-                                
-                                {/* 2. Reply Button */}
-                                <button 
-                                    onClick={() => { onReply(msg, contentToDisplay); setShowContextMenu(false); }}
-                                    className="flex items-center gap-2 p-2 rounded-lg text-sm text-slate-200 hover:bg-slate-700/80 transition border-t border-slate-700/50 pt-2 mt-1"
-                                >
-                                    <CornerUpLeft size={16}/> ตอบกลับ
-                                </button>
-
-                                {/* 3. Reactions */}
-                                <div className="flex gap-1 justify-center border-t border-slate-700/50 pt-2 mt-1">
-                                    {EMOJIS.map(emoji => (
-                                        <button 
-                                            key={emoji}
-                                            onClick={() => handleReact(emoji)}
-                                            className="text-xl p-1.5 rounded-full hover:bg-slate-700 transition duration-150 transform hover:scale-110"
-                                            title={`Reaction: ${emoji}`}
-                                        >
-                                            {emoji}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {/* Hidden Reply Icon for visual feedback during swipe */}
-                    <div className={`absolute left-0 top-1/2 -translate-y-1/2 transition-opacity ${swipeOffset > 10 ? 'opacity-100' : 'opacity-0'}`}>
-                        <CornerUpLeft size={24} className="text-blue-400"/>
-                    </div>
-
-                    {/* Reply Quote Block */}
-                    {msg.replyToId && (
-                        <div className={`text-xs text-slate-400 mb-1 px-3 py-1 rounded-t-lg max-w-[85%] ${replyQuoteClasses} border-l-2 border-blue-400`}>
-                            <span className="font-semibold text-blue-300">ตอบกลับ {msg.replyToSender}</span>
-                            <p className="text-slate-300 truncate max-w-full">{msg.replyToText}</p>
-                        </div>
-                    )}
-                    
-                    {/* Header: Time, Sender, Lock/Delete/Reply Icons */}
-                    <div className={`flex items-center gap-2 mb-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-                        
-                        {/* 1. Reply Button (alternative to swipe) */}
-                        <button 
-                            onClick={() => onReply(msg, contentToDisplay)} 
-                            className="text-slate-400 hover:text-blue-400 p-1 rounded-full transition"
-                            title="ตอบกลับ"
-                        >
-                            <CornerUpLeft size={14} />
-                        </button>
-                        
-                        {/* 2. Delete Button */}
-                        {(isMe || isAdmin) && (
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); onDelete(msg.id); }} 
-                                className="text-red-500 hover:text-red-400 p-1 rounded-full transition"
-                                title={isMe ? "ลบข้อความนี้" : "ลบข้อความนี้ (Admin)"}
-                            >
-                                <Trash2 size={14} />
-                            </button>
-                        )}
-                        
-                        {/* 3. Permanent Unlock Button */}
-                        {showPermanentUnlock && (
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); setIsConfirmingUnlock(true); }}
-                                className="text-green-500 hover:text-green-400 p-1 rounded-full transition"
-                                title="ปลดล็อคถาวร (ทำให้ทุกคนเห็นได้)"
-                            >
-                                <CheckCircle size={14} />
-                            </button>
-                        )}
-
-                        {/* 4. Local Relock Icon */}
-                        {isDecrypted && (
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); handleRelock(); }} 
-                                className="text-blue-400 hover:text-blue-300 p-1 rounded-full transition"
-                                title="ล็อคข้อความอีกครั้ง (เฉพาะเครื่องนี้)"
-                            >
-                                <RotateCcw size={14} />
-                            </button>
-                        )}
-                        
-                        {/* 5. Lock Status Icon */}
-                        {isLocked && !isDecrypted && (
-                            <Lock size={12} className="text-red-400" title="ข้อความถูกล็อค" />
-                        )}
-                        
-                        {/* 6. Sender Name and Time */}
-                        <span className={`text-[10px] text-slate-500`}>{formatDisplayTime(msg.createdAt)}</span>
-                        
-                        <span className={`text-xs ${senderNameClasses}`}>
-                            {isSenderAdmin && <Crown size={14} className="text-yellow-500" title="ผู้ดูแลระบบ"/>}
-                            {isMe && !isSenderAdmin ? 'คุณ' : msg.sender}
-                        </span>
-                    </div>
-                    
-                    {/* Message Bubble */}
-                    <div 
-                        style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.15s ease-out' : 'none' }}
-                        className={`max-w-[85%] rounded-2xl p-3 ${
-                        isMe 
-                        ? 'bg-blue-600 text-white rounded-br-sm shadow-blue-900/20' 
-                        : (isSenderAdmin ? 'bg-yellow-800/80 text-white rounded-bl-sm border border-yellow-700 shadow-yellow-900/20' : 'bg-slate-800 text-slate-200 rounded-bl-sm border border-slate-700')
-                    } shadow-lg relative`}>
-                        
-                        {/* 1. Confirmation Modal for Permanent Unlock */}
-                        {isConfirmingUnlock ? (
-                            <div className="bg-red-800/50 p-3 rounded-lg border border-red-700">
-                                <p className="text-sm font-semibold text-red-300 mb-2">
-                                    คุณแน่ใจหรือไม่?
-                                </p>
-                                <p className="text-xs text-red-100 mb-3">
-                                    การปลดล็อคถาวรจะลบการเข้ารหัสออกจากฐานข้อมูล ทำให้ทุกคนเห็นข้อความนี้ และไม่สามารถย้อนกลับไปล็อคได้อีก
-                                </p>
-                                <div className="flex gap-2">
-                                    <button 
-                                        onClick={handleUnlockConfirmed}
-                                        className="flex-1 bg-red-600 hover:bg-red-500 text-white font-medium py-1.5 rounded-lg text-sm transition"
-                                    >
-                                        ปลดล็อคถาวร
-                                    </button>
-                                    <button 
-                                        onClick={() => setIsConfirmingUnlock(false)}
-                                        className="bg-slate-600 hover:bg-slate-500 text-white font-medium px-3 py-1.5 rounded-lg text-sm transition"
-                                    >
-                                        ยกเลิก
-                                    </button>
-                                </div>
-                            </div>
-                        ) : displayPlaceholder ? (
-                            /* 2. Locked Placeholder / Decryption Input */
-                            <>
-                                <p className="flex items-center gap-2 text-sm text-red-300 mb-2">
-                                    <Lock size={16}/> ข้อความนี้ถูกเข้ารหัสไว้
-                                </p>
-                                
-                                {isAdmin && !isAttemptingDecrypt && (
-                                    <button 
-                                        onClick={handleAdminDecrypt}
-                                        className="mt-1 flex items-center gap-1 bg-yellow-600 hover:bg-yellow-500 text-white font-medium py-1.5 px-3 rounded-lg text-sm transition mb-2"
-                                        title="ปลดล็อคโดย Admin (ไม่ใช้รหัส)"
-                                    >
-                                        <ShieldCheck size={14}/> ปลดล็อคโดย Admin
-                                    </button>
-                                )}
-                                
-                                {isAttemptingDecrypt ? (
-                                    <div className="flex flex-col gap-2">
-                                        
-                                        {isMe && (
-                                            <p className="text-xs text-yellow-300/80 bg-slate-700/50 p-2 rounded-lg border border-yellow-700/50">
-                                                <Key size={12} className="inline mr-1 text-yellow-400"/>
-                                                ในฐานะผู้สร้าง: คุณสามารถป้อนรหัสใดก็ได้เพื่อเปิดอ่าน (ระบบจะใช้ Master Key สำรอง)
-                                            </p>
-                                        )}
-                                        {!isMe && (
-                                            <p className="text-xs text-red-300/80 bg-slate-700/50 p-2 rounded-lg border border-red-700/50">
-                                                <Key size={12} className="inline mr-1 text-red-400"/>
-                                                คุณต้องป้อนรหัสที่ถูกต้องเพื่อเปิดอ่านข้อความนี้
-                                            </p>
-                                        )}
-
-                                        <input
-                                            type="password"
-                                            placeholder="กรอกรหัสเพื่อเปิดอ่าน"
-                                            value={decryptKey}
-                                            onChange={(e) => setDecryptKey(e.target.value)}
-                                            onKeyPress={(e) => { if (e.key === 'Enter') handleDecrypt(); }}
-                                            className="w-full bg-slate-700 border border-slate-600 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-red-400 placeholder:text-slate-500 text-sm"
-                                        />
-                                        {error && <p className="text-xs text-red-400">{error}</p>}
-                                        <div className="flex gap-2">
-                                            <button 
-                                                onClick={handleDecrypt}
-                                                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-medium py-2 rounded-lg text-sm transition"
-                                            >
-                                                <Eye size={16} className="inline mr-1" /> {isMe ? 'เปิดข้อความของฉัน' : 'เปิดอ่าน'}
-                                            </button>
-                                            <button 
-                                                onClick={handleRelock} 
-                                                className="bg-slate-700 hover:bg-slate-600 text-white font-medium px-4 py-2 rounded-lg text-sm transition"
-                                            >
-                                                ยกเลิก
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <button 
-                                        onClick={() => setIsAttemptingDecrypt(true)}
-                                        className="mt-1 flex items-center gap-1 bg-red-600 hover:bg-red-500 text-white font-medium py-1.5 px-3 rounded-lg text-sm transition"
-                                    >
-                                        <Key size={14}/> {isMe ? 'เปิดข้อความของฉัน' : 'เปิดอ่าน'}
-                                    </button>
-                                )}
-                            </>
-                        ) : (
-                            /* 3. Unlocked / Regular Content */
-                            <>
-                                {usedBypass && (
-                                    <p className="mb-2 text-xs font-semibold text-yellow-300/80 bg-slate-700/50 p-1.5 rounded-lg border border-yellow-700/50">
-                                        <ShieldCheck size={12} className="inline mr-1"/> (เปิดด้วย Creator Bypass Key สำรอง)
-                                    </p>
-                                )}
-                                {contentToDisplay.text && <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{contentToDisplay.text}</p>}
-                                {contentToDisplay.image && (
-                                    // Image Download
-                                    <a 
-                                        href={contentToDisplay.image} 
-                                        download={`chat_image_${msg.id}.png`}
-                                        className="mt-2 block"
-                                        title="คลิกเพื่อดาวน์โหลดรูปภาพ"
-                                    >
-                                        <img 
-                                            src={contentToDisplay.image} 
-                                            className="rounded-lg max-h-48 w-full object-cover border border-black/20 cursor-pointer hover:opacity-90 transition" 
-                                            alt="uploaded" 
-                                        />
-                                    </a>
-                                )}
-                                
-                                {isAdmin && isLocked && decryptedContent && (
-                                    <p className="mt-2 text-xs font-semibold text-yellow-300/80 bg-slate-700/50 p-1 rounded-lg">
-                                        <ShieldCheck size={12} className="inline mr-1"/> (Admin View: Encrypted Content)
-                                    </p>
-                                )}
-                            </>
-                        )}
-                        
-                    </div>
-                    
-                    {/* Reactions Display */}
-                    {Object.keys(msg.reactions || {}).length > 0 && (
-                        <div className={`flex gap-1 mt-1 text-sm ${isMe ? 'mr-1' : 'ml-1'}`}>
-                            {EMOJIS.filter(emoji => msg.reactions[emoji]?.length > 0).map(emoji => {
-                                const count = msg.reactions[emoji].length;
-                                const hasReacted = msg.reactions[emoji].includes(user.uid);
-                                return (
-                                    <div 
-                                        key={emoji} 
-                                        className={`flex items-center p-1 rounded-full text-xs font-medium cursor-pointer transition ${
-                                            hasReacted ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                                        }`}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onUpdateReaction(msg.id, emoji);
-                                        }}
-                                        title={`${count} คน reacted with ${emoji}`}
-                                    >
-                                        {emoji} <span className="ml-1 text-xs">{count}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            );
-        };
-        
-        // =================================================================
-        // SettingsModal Component (Unchanged)
-        // =================================================================
-        const SettingsModal = ({ user, isAdmin, onClose, onUpdateProfile }) => {
-            const [newDisplayName, setNewDisplayName] = useState(user?.displayName || '');
-            const [copyStatus, setCopyStatus] = useState('');
-            const [isSaving, setIsSaving] = useState(false);
-
-            const handleCopy = () => {
-                try {
-                    const el = document.createElement('textarea');
-                    el.value = user.uid;
-                    document.body.appendChild(el);
-                    el.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(el);
-                    setCopyStatus('คัดลอกแล้ว!');
-                } catch (err) {
-                    setCopyStatus('คัดลอกไม่ได้...');
-                }
-                setTimeout(() => setCopyStatus(''), 2000);
-            };
-
-            const handleSave = async () => {
-                const name = newDisplayName.trim();
-                if (!name || name === user?.displayName) return;
-                
-                setIsSaving(true);
-                await onUpdateProfile(name);
-                setIsSaving(false);
-                onClose();
-            };
-
-            return (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
-                    <div 
-                        className="bg-slate-800 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-slate-700"
-                        onClick={(e) => e.stopPropagation()} 
-                    >
-                        <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
-                            <h2 className="text-xl font-bold text-blue-400 flex items-center gap-2">
-                                <Settings size={20}/> การตั้งค่า 
-                                {isAdmin && <Crown size={20} className="text-yellow-500" title="Admin User"/>}
-                            </h2>
-                            <button onClick={onClose} className="text-slate-400 hover:text-white transition">
-                                <X size={24} />
-                            </button>
-                        </div>
-
-                        {/* 1. เปลี่ยนชื่อ */}
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-slate-300 mb-1 flex items-center gap-1">
-                                <User size={14}/> ชื่อผู้ใช้ของคุณ
-                            </label>
-                            <input 
-                                type="text"
-                                value={newDisplayName}
-                                onChange={(e) => setNewDisplayName(e.target.value)}
-                                placeholder="ชื่อใหม่"
-                                className="w-full bg-slate-700 border border-slate-600 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-blue-500 text-base"
-                            />
-                            <button 
-                                onClick={handleSave}
-                                disabled={isSaving || !newDisplayName.trim() || newDisplayName.trim() === user?.displayName}
-                                className={`mt-2 w-full py-2 rounded-lg font-semibold transition ${
-                                    isSaving || !newDisplayName.trim() || newDisplayName.trim() === user?.displayName
-                                    ? 'bg-slate-700 text-slate-500' 
-                                    : 'bg-blue-600 hover:bg-blue-500 text-white'
-                                }`}
-                            >
-                                {isSaving ? 'กำลังบันทึก...' : 'บันทึกชื่อ'}
-                            </button>
-                        </div>
-                        
-                        {/* 2. User ID */}
-                        <div className="mb-4 pt-4 border-t border-slate-700">
-                            <label className="block text-sm font-medium text-slate-300 mb-1 flex items-center gap-1">
-                                <Key size={14}/> User ID (ใช้ในการระบุตัวตน)
-                            </label>
-                            <div className="flex items-center gap-2">
-                                <span className="flex-1 bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg truncate select-text">
-                                    {user?.uid || 'Loading...'}
-                                </span>
-                                <button 
-                                    onClick={handleCopy}
-                                    className={`p-2 rounded-lg transition text-white ${copyStatus ? 'bg-green-600' : 'bg-slate-600 hover:bg-slate-500'}`}
-                                >
-                                    <Copy size={18} />
-                                </button>
-                            </div>
-                            {copyStatus && <p className="text-xs text-green-400 mt-1">{copyStatus}</p>}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // =================================================================
-        // App Component
-        // =================================================================
-        const App = () => {
-            const ADMIN_UID = "mRhV0VcapENUjSUZs0wR9ce99Qg2";
-            // NEW: Master Key for Creator Bypass (for development/test purposes only)
-            const CREATOR_MASTER_BYPASS_KEY = "creator-unlock-key-123"; 
-            
-            const [user, setUser] = useState(null);
-            const [isAdmin, setIsAdmin] = useState(false);
-            const [messages, setMessages] = useState([]);
-            const [inputText, setInputText] = useState('');
-            const [image, setImage] = useState(null);
-            const [lockCode, setLockCode] = useState(''); 
-            const [isLocking, setIsLocking] = useState(false); 
-            const [loading, setLoading] = useState(false);
-            const [showSettingsModal, setShowSettingsModal] = useState(false); 
-            const [replyTarget, setReplyTarget] = useState(null); 
-            const messagesEndRef = useRef(null);
-            const fileInputRef = useRef(null);
-            const [initComplete, setInitComplete] = useState(false);
-            const CHAT_COLLECTION = "public_chats";
-
-            // Auth & Listen
-            useEffect(() => {
-                if (!auth || !db) return;
-                
-                // 1. Login Anonymously
-                signInAnonymously(auth).catch(err => console.error("Auth Failed:", err));
-                
-                const unsubAuth = onAuthStateChanged(auth, u => {
-                    if (u) {
-                        setUser(u);
-                        setIsAdmin(u.uid === ADMIN_UID);
-                        
-                        if (!u.displayName) {
-                            const defaultName = `Anonymous-${u.uid.slice(0,4)}`;
-                            updateProfile(u, { displayName: defaultName });
-                            setUser(prev => ({ ...prev, displayName: defaultName }));
-                        }
-                        setInitComplete(true);
-                    }
-                });
-
-                return () => unsubAuth();
-            }, []);
-            
-            // 2. Data Listener (Only runs after Auth is complete)
-            useEffect(() => {
-                if (!initComplete) return;
-
-                const q = query(collection(db, CHAT_COLLECTION), orderBy("createdAt", "desc"), limit(50));
-                
-                const unsubMsg = onSnapshot(q, (snapshot) => {
-                    setMessages(snapshot.docs.map(doc => ({ 
-                        id: doc.id, 
-                        ...doc.data(),
-                        reactions: doc.data().reactions || {}
-                    })).reverse());
-                    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-                }, (error) => {
-                    console.error("Snapshot Error (Data Listener):", error);
-                });
-
-                return () => unsubMsg();
-            }, [initComplete]);
-            
-            
-            const handleSend = async (e) => {
-                e.preventDefault();
-                const text = inputText.trim();
-                const code = lockCode.trim();
-
-                if ((!text && !image) || loading || !user) return;
-                
-                setLoading(true);
-                try {
-                    let imageBase64 = null;
-                    if (image) {
-                        imageBase64 = await compressImage(image);
-                    }
-                    
-                    let messageData = {
-                        sender: user?.displayName || 'Anonymous',
-                        uid: user?.uid,
-                        createdAt: serverTimestamp(),
-                        isLocked: false,
-                        text: text,
-                        image: imageBase64,
-                        reactions: {}
-                    };
-                    
-                    if (replyTarget) {
-                        messageData.replyToId = replyTarget.id;
-                        messageData.replyToSender = replyTarget.sender;
-                        messageData.replyToText = replyTarget.text;
-                    }
-
-                    if (isLocking && code) { 
-                        const contentToEncrypt = JSON.stringify({
-                            text: text,
-                            image: imageBase64
-                        });
-                        
-                        // 1. Encrypt with user's key (standard)
-                        const userEncrypted = CryptoJS.AES.encrypt(contentToEncrypt, code).toString();
-                        
-                        // 2. Encrypt with Creator Master Bypass Key (for creator's guaranteed access)
-                        const masterEncrypted = CryptoJS.AES.encrypt(contentToEncrypt, CREATOR_MASTER_BYPASS_KEY).toString();
-
-                        messageData.isLocked = true;
-                        messageData.encryptedContent = userEncrypted;
-                        messageData.masterEncryptedContent = masterEncrypted; // NEW FIELD FOR BYPASS
-
-                        messageData.text = 'ข้อความนี้ถูกเข้ารหัส'; 
-                        messageData.image = null;
-                        
-                        setLockCode(''); 
-                        setIsLocking(false); 
-                    } else if (isLocking && !code) {
-                         // If locking was attempted but no code provided, reset
-                         setIsLocking(false);
-                    }
-
-
-                    await addDoc(collection(db, CHAT_COLLECTION), messageData);
-
-                    setInputText('');
-                    setImage(null);
-                    setReplyTarget(null);
-                    setLoading(false);
-                } catch (error) {
-                    console.error("Send Error:", error);
-                    console.error("ส่งไม่ได้: " + error.message);
-                    setLoading(false);
-                }
-            };
-            
-            const handleDelete = async (id) => {
-                const msgToDelete = messages.find(m => m.id === id);
-                if (!msgToDelete || (msgToDelete.uid !== user?.uid && user?.uid !== ADMIN_UID)) {
-                    console.error("คุณไม่มีสิทธิ์ลบข้อความนี้");
-                    return;
-                }
-                
-                const confirmed = window.confirm("คุณต้องการลบข้อความนี้จริงหรือไม่?"); 
-                if (!confirmed) return;
-
-
-                try {
-                    await deleteDoc(doc(db, CHAT_COLLECTION, id));
-                } catch (error) {
-                    console.error("Delete Error:", error);
-                    console.error("ลบไม่ได้: " + error.message);
-                }
-            };
-            
-            const handlePermanentUnlock = async (id, encryptedContent, key) => {
-                setLoading(true);
-                try {
-                    // Must use the user's original key for permanent unlock
-                    const decryptedData = decryptData(encryptedContent, key);
-                    
-                    if (!decryptedData) {
-                        console.error("เกิดข้อผิดพลาดในการถอดรหัส (รหัสไม่ถูกต้องหรือไม่ใช่รหัสที่ใช้ตอนถอดรหัสครั้งล่าสุด)");
-                        setLoading(false);
-                        return;
-                    }
-
-                    const messageRef = doc(db, CHAT_COLLECTION, id);
-                    await updateDoc(messageRef, {
-                        isLocked: false,
-                        text: decryptedData.text || '', 
-                        image: decryptedData.image || null, 
-                        encryptedContent: deleteField(), 
-                        masterEncryptedContent: deleteField(), // Remove master bypass content too
-                    });
-                    
-                    setLoading(false);
-                } catch (error) {
-                    console.error("Permanent Unlock Error:", error);
-                    console.error("ไม่สามารถปลดล็อคถาวรได้: " + error.message);
-                    setLoading(false);
-                }
-            };
-            
-            const handleUpdateReaction = async (messageId, emoji) => {
-                if (!user || !messageId) return;
-
-                const messageRef = doc(db, CHAT_COLLECTION, messageId);
-                const userId = user.uid;
-                const path = `reactions.${emoji}`; 
-
-                try {
-                    const msg = messages.find(m => m.id === messageId);
-                    if (!msg) return;
-
-                    const currentReactionUids = msg.reactions?.[emoji] || [];
-
-                    if (currentReactionUids.includes(userId)) {
-                        await updateDoc(messageRef, {
-                            [path]: arrayRemove(userId)
-                        });
+                    errorCount++;
+                    if (targetChar === undefined) {
+                        // User typed extra characters at the end
+                        diff.push({ status: 'extra', char: userChar });
+                    } else if (userChar === undefined) {
+                        // User stopped short (missing the rest)
+                        diff.push({ status: 'missing', char: targetChar });
                     } else {
-                        await updateDoc(messageRef, {
-                            [path]: arrayUnion(userId)
-                        });
+                        // Wrong character at this exact spot (Substitution error)
+                        diff.push({ status: 'wrong', char: userChar, expected: targetChar });
                     }
-                } catch (error) {
-                    console.error("Update Reaction Error:", error);
-                    console.error("ไม่สามารถส่งรีแอคชั่นได้: " + error.message);
                 }
-            };
-
-            const handleReply = (msg, contentToDisplay) => {
-                let textPreview = contentToDisplay.text || '';
-
-                if (msg.isLocked && !contentToDisplay.text && !contentToDisplay.image) {
-                     textPreview = "🔒 ข้อความเข้ารหัส";
-                } else if (!textPreview && contentToDisplay.image) {
-                    textPreview = "🖼️ รูปภาพ";
-                }
-                
-                const truncatedText = textPreview.slice(0, 50) + (textPreview.length > 50 ? '...' : '');
-
-                setReplyTarget({
-                    id: msg.id,
-                    sender: msg.sender,
-                    text: truncatedText,
-                });
-            };
-            
-            const handleUpdateProfile = async (newDisplayName) => {
-                if (!user || !auth.currentUser) return;
-                try {
-                    await updateProfile(auth.currentUser, { displayName: newDisplayName });
-                    setUser(prev => ({ ...prev, displayName: newDisplayName }));
-                } catch (error) {
-                    console.error("Update Profile Error:", error);
-                    console.error("เปลี่ยนชื่อไม่ได้: " + error.message);
-                }
-            };
-
-            const handleFile = (e) => {
-                const file = e.target.files[0];
-                if (file && file.type.startsWith('image/')) {
-                    setImage(file);
-                } else if (file) {
-                    console.error("รองรับเฉพาะไฟล์รูปภาพเท่านั้นครับ");
-                    e.target.value = null;
-                }
-            };
-
-            if (!initComplete) {
-                return (
-                    <div className="h-screen flex items-center justify-center bg-slate-900 text-slate-400">
-                        <div className="flex items-center space-x-2">
-                            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            <span>กำลังเชื่อมต่อฐานข้อมูล...</span>
-                        </div>
-                    </div>
-                );
             }
 
-            return (
-                <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-950 border-x border-slate-800 shadow-2xl">
-                    
-                    {/* Header (Fixed) */}
-                    <header className={`bg-slate-900 border-b border-slate-800 z-10 p-4 shadow-md`}>
-                        <div className="flex justify-between items-center">
-                            {/* App Title and Status */}
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-                                <h1 className="font-bold text-lg bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Global Chat</h1>
-                            </div>
-                            
-                            {/* User Info and Settings Button */}
-                            <div className="flex items-center gap-2">
-                                <span className={`text-sm truncate max-w-[150px] ${isAdmin ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
-                                    {user?.displayName}
-                                </span>
-                                {isAdmin && <Crown size={18} className="text-yellow-500" title="ผู้ดูแลระบบ"/>}
-                                <button 
-                                    onClick={() => setShowSettingsModal(true)}
-                                    className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 transition"
-                                    title="ตั้งค่า"
-                                >
-                                    <Settings size={18} />
-                                </button>
-                            </div>
-                        </div>
-                    </header>
+            renderResults(diff, errorCount === 0);
+        }
 
-                    {/* Messages Area */}
-                    <main className="flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar bg-slate-950">
-                        {loading && (
-                            <div className="text-center text-yellow-400 text-sm py-2">
-                                กำลังดำเนินการ...
-                            </div>
-                        )}
-                        {messages.length === 0 && (
-                            <div className="text-center text-slate-600 mt-20 text-sm">
-                                <p>ยังไม่มีข้อความ</p>
-                                <p>ยินดีต้อนรับสู่โปรเจกต์แบ่งปันทั่วโลก!</p>
-                            </div>
-                        )}
-                        
-                        {messages.map((msg) => (
-                            <MessageItem 
-                                key={msg.id} 
-                                msg={msg} 
-                                isMe={msg.uid === user?.uid} 
-                                isAdmin={isAdmin} 
-                                user={user} 
-                                onDelete={handleDelete}
-                                onPermanentUnlock={handlePermanentUnlock} 
-                                onReply={handleReply} 
-                                onUpdateReaction={handleUpdateReaction} 
-                                creatorBypassKey={CREATOR_MASTER_BYPASS_KEY} // Pass the master key down
-                            />
-                        ))}
-                        <div ref={messagesEndRef}></div>
-                    </main>
+        function handleReset() {
+            userInput.value = "";
+            resultsArea.classList.add('hidden');
+            checkButton.disabled = true;
+            document.getElementById('status').textContent = 'สถานะ: ยังไม่เริ่ม';
+        }
 
-                    {/* Input Area (Footer - Fixed) */}
-                    <footer className={`bg-slate-900 border-t border-slate-800 shadow-md p-3`}>
-                        
-                        {/* 1. Reply Preview */}
-                        {replyTarget && (
-                            <div className="flex items-center justify-between bg-slate-800 p-2 rounded-t-xl border border-b-0 border-slate-700">
-                                <div className="flex flex-col text-xs text-slate-400 border-l-2 border-blue-500 pl-2 max-w-[90%] truncate">
-                                    <span className="font-semibold text-blue-300">ตอบกลับ {replyTarget.sender}</span>
-                                    <span className="truncate text-slate-300">{replyTarget.text}</span>
-                                </div>
-                                <button onClick={() => setReplyTarget(null)} className="text-slate-500 hover:text-white transition p-1">
-                                    <X size={16} />
-                                </button>
-                            </div>
-                        )}
-                        
-                        {/* 2. Lock Code Input (Shown only when isLocking is true) */}
-                        {isLocking && (
-                            <div className="mb-2 flex items-center gap-2 pt-2">
-                                <Key size={16} className={lockCode ? "text-yellow-400" : "text-slate-500"}/>
-                                <input 
-                                    type="password"
-                                    value={lockCode}
-                                    onChange={(e) => setLockCode(e.target.value)}
-                                    placeholder="กรอกรหัสสำหรับล็อคข้อความ (จำเป็นต้องใช้รหัสนี้)" 
-                                    className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:border-yellow-500 transition-all placeholder:text-slate-600 text-sm"
-                                    autoFocus 
-                                />
-                                <button onClick={() => {setLockCode(''); setIsLocking(false);}} className="p-1 bg-slate-700 hover:bg-slate-600 rounded-full text-slate-400" title="ยกเลิกการล็อค">
-                                    <X size={14}/>
-                                </button>
-                            </div>
-                        )}
+        // --- EVENT LISTENERS ---
+        userInput.addEventListener('input', () => {
+            checkButton.disabled = userInput.value.length === 0;
+            document.getElementById('status').textContent = userInput.value.length === 0 ? 'สถานะ: ยังไม่เริ่ม' : 'สถานะ: กำลังพิมพ์...';
+            // Hide previous results when user starts typing again
+            resultsArea.classList.add('hidden');
+        });
 
-                        {/* 3. Image Preview */}
-                        {image && (
-                            <div className="flex items-center gap-2 bg-slate-800 p-2 rounded-lg mb-2 w-fit border border-slate-700">
-                                <span className="text-xs text-blue-300 truncate max-w-[150px]">{image.name}</span>
-                                <button onClick={() => {setImage(null); fileInputRef.current.value=''}} className="text-slate-400 hover:text-red-400"><X size={14}/></button>
-                            </div>
-                        )}
-                        
-                        {/* 4. Main Send Form */}
-                        <form onSubmit={handleSend} className="flex gap-2 items-end">
-                            
-                            {/* Image Picker */}
-                            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-xl transition text-slate-400" title="แนบรูปภาพ">
-                                <ImageIcon size={20} className={image ? "text-blue-400" : ""} />
-                            </button>
-                            <input type="file" ref={fileInputRef} onChange={handleFile} accept="image/*" className="hidden" />
-                            
-                            {/* Toggle Lock Code Input */}
-                            <button 
-                                type="button" 
-                                onClick={() => {
-                                    setIsLocking(!isLocking);
-                                    if (isLocking) setLockCode(''); 
-                                }}
-                                className={`p-3 rounded-xl transition-all shadow-lg ${
-                                    isLocking
-                                    ? 'bg-yellow-600 hover:bg-yellow-500 text-white shadow-yellow-600/20' 
-                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
-                                }`}
-                                title={isLocking ? "ยกเลิกการเข้ารหัส" : "ล็อคข้อความนี้ด้วยรหัส"}
-                            >
-                                <Lock size={20} />
-                            </button>
+        checkButton.addEventListener('click', handleCheck);
+        resetButton.addEventListener('click', handleReset);
+        toggleReferenceButton.addEventListener('click', toggleReference);
 
-                            {/* Text Input */}
-                            <div className="flex-1 relative">
-                                <input 
-                                    type="text" 
-                                    value={inputText}
-                                    onChange={(e) => setInputText(e.target.value)}
-                                    placeholder="พิมพ์ข้อความ..." 
-                                    className="w-full bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-600"
-                                />
-                            </div>
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            setupDarkMode();
+            renderReferenceText();
+        });
 
-                            {/* Send Button */}
-                            <button type="submit" disabled={loading || (!inputText && !image)} 
-                                className={`p-3 rounded-xl transition-all shadow-lg ${
-                                    loading || (!inputText && !image) 
-                                    ? 'bg-slate-800 text-slate-600' 
-                                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
-                                }`}
-                                title="ส่งข้อความ"
-                            >
-                                {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <Send size={20} />}
-                            </button>
-                        </form>
-                    </footer>
-                    
-                    {/* Settings Modal */}
-                    {showSettingsModal && (
-                        <SettingsModal 
-                            user={user} 
-                            isAdmin={isAdmin}
-                            onClose={() => setShowSettingsModal(false)} 
-                            onUpdateProfile={handleUpdateProfile}
-                        />
-                    )}
-                </div>
-            );
-        };
-
-        const root = createRoot(document.getElementById('root'));
-        root.render(<App />);
     </script>
 </body>
 </html>
